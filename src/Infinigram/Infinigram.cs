@@ -18,6 +18,7 @@
 // synchronization.
 
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -773,7 +774,7 @@ public sealed class Infinigram : IDisposable
                 {
                     int stopLength = stopSeq.Count;
                     if (generated.Count >= stopLength &&
-                        generated.AsSpan()[^stopLength..].SequenceEqual(stopSeq.ToArray()))
+                        CollectionsMarshal.AsSpan(generated)[^stopLength..].SequenceEqual(CollectionsMarshal.AsSpan(stopSeq)))
                     {
                         generated.RemoveRange(generated.Count - stopLength, stopLength);
                         return generated;
