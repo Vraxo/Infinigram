@@ -7,7 +7,7 @@ public class ResourceLifecycleTests
     [Fact]
     public void DisposeIsIdempotent()
     {
-        var model = new Infinigram(TestData.B("hello world").ToArray());
+        var model = new NGramModel(TestData.B("hello world").ToArray());
         model.Dispose();
         model.Dispose();
     }
@@ -15,7 +15,7 @@ public class ResourceLifecycleTests
     [Fact]
     public void QueriesAfterDisposeThrow()
     {
-        var model = new Infinigram(TestData.B("hello world").ToArray());
+        var model = new NGramModel(TestData.B("hello world").ToArray());
         var context = TestData.B("hello");
         model.Dispose();
 
@@ -44,7 +44,7 @@ public class ResourceLifecycleTests
     [Fact]
     public void UpdateAfterDisposeThrows()
     {
-        var model = new Infinigram(TestData.B("hello world").ToArray());
+        var model = new NGramModel(TestData.B("hello world").ToArray());
         model.Dispose();
 
         Action update = () => model.Update(TestData.B(" more").ToArray());
@@ -54,7 +54,7 @@ public class ResourceLifecycleTests
     [Fact]
     public void RepeatedUpdatesAreConsistent()
     {
-        using var model = new Infinigram(TestData.B("hello").ToArray());
+        using var model = new NGramModel(TestData.B("hello").ToArray());
         for (int i = 0; i < 20; i++)
         {
             model.Update(new List<int> { 65 + (i % 26) });
@@ -67,7 +67,7 @@ public class ResourceLifecycleTests
     [Fact]
     public void DisposeClearsTheCache()
     {
-        var model = new Infinigram(TestData.B("the cat sat on the mat").ToArray());
+        var model = new NGramModel(TestData.B("the cat sat on the mat").ToArray());
         model.Continuations(TestData.B("the"));
         model.ContinuationsCacheCount.Should().BeGreaterThan(0);
 

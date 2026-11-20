@@ -7,7 +7,7 @@ public class PredictTests
     [Fact]
     public void ReturnsProbabilities()
     {
-        using var model = new Infinigram(Enumerable.Repeat(new List<int> { 1, 2, 3 }, 10).SelectMany(x => x).ToList());
+        using var model = new NGramModel(Enumerable.Repeat(new List<int> { 1, 2, 3 }, 10).SelectMany(x => x).ToList());
         var probs = model.Predict(new List<int> { 1, 2 }, topK: 256);
 
         probs.Should().NotBeNull();
@@ -19,7 +19,7 @@ public class PredictTests
     [Fact]
     public void TopKLimitsResults()
     {
-        using var model = new Infinigram(Enumerable.Range(0, 100).SelectMany(i => Enumerable.Repeat(i, 5)).ToList());
+        using var model = new NGramModel(Enumerable.Range(0, 100).SelectMany(i => Enumerable.Repeat(i, 5)).ToList());
         var probs = model.Predict(new List<int> { 0 }, topK: 5);
         probs!.Count.Should().BeLessThanOrEqualTo(5);
     }
@@ -27,7 +27,7 @@ public class PredictTests
     [Fact]
     public void SmoothingAssignsProbabilityToUnseenTokens()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 3, 1, 2, 4 });
+        using var model = new NGramModel(new List<int> { 1, 2, 3, 1, 2, 4 });
         var probs = model.Predict(new List<int> { 1, 2 }, topK: 256, smoothing: 0.1);
 
         probs.Should().NotBeNull();
@@ -38,7 +38,7 @@ public class PredictTests
     [Fact]
     public void EmptyContextReturnsUnigramDistribution()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 3 });
+        using var model = new NGramModel(new List<int> { 1, 2, 3 });
         var probs = model.Predict(new List<int>(), topK: 256);
 
         probs.Should().NotBeNull();
@@ -51,7 +51,7 @@ public class PredictTests
     [Fact]
     public void PredictionsAreConsistentAcrossCalls()
     {
-        using var model = new Infinigram(Enumerable.Repeat(new List<int> { 1, 2, 3 }, 5).SelectMany(x => x).ToList());
+        using var model = new NGramModel(Enumerable.Repeat(new List<int> { 1, 2, 3 }, 5).SelectMany(x => x).ToList());
         var first = model.Predict(new List<int> { 1, 2 });
         var second = model.Predict(new List<int> { 1, 2 });
 
@@ -63,14 +63,14 @@ public class PredictTests
     [Fact]
     public void PredictNoMatchReturnsNull()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 3 });
+        using var model = new NGramModel(new List<int> { 1, 2, 3 });
         model.Predict(new List<int> { 99, 98 }).Should().BeNull();
     }
 
     [Fact]
     public void TopKReturnsCorrectItems()
     {
-        using var model = new Infinigram(TestData.B("ab ab ab ab ac ac ad").ToArray());
+        using var model = new NGramModel(TestData.B("ab ab ab ab ac ac ad").ToArray());
         var probs = model.Predict(TestData.B("a"), topK: 2);
 
         probs.Should().NotBeNull();
@@ -82,7 +82,7 @@ public class PredictTests
     [Fact]
     public void TopKReturnsCorrectCount()
     {
-        using var model = new Infinigram(Enumerable.Range(0, 50).SelectMany(v => Enumerable.Repeat(v, 10)).ToList());
+        using var model = new NGramModel(Enumerable.Range(0, 50).SelectMany(v => Enumerable.Repeat(v, 10)).ToList());
 
         foreach (var k in new[] { 1, 3, 5, 10 })
         {
@@ -94,7 +94,7 @@ public class PredictTests
     [Fact]
     public void ReturnsAllWhenFewerContinuationsThanTopK()
     {
-        using var model = new Infinigram(TestData.B("abc abc abc").ToArray());
+        using var model = new NGramModel(TestData.B("abc abc abc").ToArray());
         var probs = model.Predict(TestData.B("ab"), topK: 256);
 
         probs.Should().NotBeNull();
@@ -105,7 +105,7 @@ public class PredictTests
     [Fact]
     public void PredictUsesLimitedContinuationsAndCompletes()
     {
-        using var model = new Infinigram(TestData.B(string.Concat(Enumerable.Repeat("the ", 10000))).ToArray());
+        using var model = new NGramModel(TestData.B(string.Concat(Enumerable.Repeat("the ", 10000))).ToArray());
         var probs = model.Predict(TestData.B("the"), topK: 10);
 
         probs.Should().NotBeNull();
@@ -118,7 +118,7 @@ public class PredictLogprobsTests
     [Fact]
     public void LogprobsAreNonPositive()
     {
-        using var model = new Infinigram(TestData.B("the cat sat ").ToArray());
+        using var model = new NGramModel(TestData.B("the cat sat ").ToArray());
         var logprobs = model.PredictLogprobs(TestData.B("the"));
 
         logprobs.Should().NotBeNull();
@@ -128,7 +128,7 @@ public class PredictLogprobsTests
     [Fact]
     public void LogprobsAreNullWhenNoMatch()
     {
-        using var model = new Infinigram(TestData.B("abc").ToArray());
+        using var model = new NGramModel(TestData.B("abc").ToArray());
         model.PredictLogprobs(new List<int> { 200, 201 }).Should().BeNull();
     }
 }
@@ -138,7 +138,7 @@ public class SearchLimitModelTests
     [Fact]
     public void SearchRespectsLimit()
     {
-        using var model = new Infinigram(TestData.B("the cat sat. the cat ran. the cat jumped.").ToArray());
+        using var model = new NGramModel(TestData.B("the cat sat. the cat ran. the cat jumped.").ToArray());
 
         model.Search(TestData.B("the")).Should().HaveCount(3);
         model.Search(TestData.B("the"), limit: 2).Should().HaveCount(2);
@@ -150,7 +150,7 @@ public class UpdateTests
     [Fact]
     public void UpdateExtendsCorpus()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 3 });
+        using var model = new NGramModel(new List<int> { 1, 2, 3 });
         int initialSize = model.N;
 
         model.Update(new List<int> { 4, 5, 6 });
@@ -162,7 +162,7 @@ public class UpdateTests
     [Fact]
     public void VocabularyStaysFixedAt256Bytes()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 3 });
+        using var model = new NGramModel(new List<int> { 1, 2, 3 });
         model.Update(new List<int> { 4, 5 });
 
         model.VocabSize.Should().Be(256);
@@ -172,7 +172,7 @@ public class UpdateTests
     [Fact]
     public void UpdateEnablesNewPredictions()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 3 });
+        using var model = new NGramModel(new List<int> { 1, 2, 3 });
         var context = new List<int> { 2, 3 };
 
         _ = model.Continuations(context);
@@ -186,7 +186,7 @@ public class UpdateTests
     [Fact]
     public void RepeatedUpdatesAccumulate()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 3 });
+        using var model = new NGramModel(new List<int> { 1, 2, 3 });
         for (int i = 0; i < 20; i++)
         {
             model.Update(new List<int> { 65 + (i % 26) });
@@ -200,7 +200,7 @@ public class UpdateTests
     [Fact]
     public void UpdateWithStringEncodes()
     {
-        using var model = new Infinigram("abc");
+        using var model = new NGramModel("abc");
         model.Update(" def");
 
         model.N.Should().Be(7);
@@ -213,7 +213,7 @@ public class EdgeCaseTests
     [Fact]
     public void SingleTokenCorpus()
     {
-        using var model = new Infinigram(new List<int> { 1 });
+        using var model = new NGramModel(new List<int> { 1 });
         model.N.Should().Be(1);
 
         var probs = model.Predict(new List<int>());
@@ -224,7 +224,7 @@ public class EdgeCaseTests
     [Fact]
     public void RepeatedPatternCorpusPredictsCommonToken()
     {
-        using var model = new Infinigram(Enumerable.Repeat(new List<int> { 1, 2 }, 100).SelectMany(x => x).ToList());
+        using var model = new NGramModel(Enumerable.Repeat(new List<int> { 1, 2 }, 100).SelectMany(x => x).ToList());
         var probs = model.Predict(new List<int> { 1 });
 
         probs.Should().NotBeNull();
@@ -235,7 +235,7 @@ public class EdgeCaseTests
     [Fact]
     public void LongContext()
     {
-        using var model = new Infinigram(TestData.Range(0, 100));
+        using var model = new NGramModel(TestData.Range(0, 100));
         var probs = model.Predict(TestData.Range(0, 50));
 
         probs.Should().NotBeNull();
@@ -245,7 +245,7 @@ public class EdgeCaseTests
     [Fact]
     public void ContextLongerThanCorpus()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 3 });
+        using var model = new NGramModel(new List<int> { 1, 2, 3 });
         var probs = model.Predict(TestData.Range(1, 10));
 
         (probs is null || probs.Count > 0).Should().BeTrue();
@@ -259,7 +259,7 @@ public class IntegrationTests
     {
         const int the = 1, cat = 2, sat = 3, on = 4, mat = 5;
         var corpus = new List<int> { the, cat, sat, on, the, mat, the, cat, sat, on, the };
-        using var model = new Infinigram(corpus);
+        using var model = new NGramModel(corpus);
 
         var probs = model.Predict(new List<int> { the, cat });
 
@@ -277,7 +277,7 @@ public class IntegrationTests
             DEF, FOO, LP, RP, COLON, RETURN, NUM,
             DEF, FOO, LP, RP, COLON, RETURN,
         };
-        using var model = new Infinigram(corpus);
+        using var model = new NGramModel(corpus);
 
         var probs = model.Predict(new List<int> { DEF, FOO, LP, RP, COLON, RETURN });
 
@@ -288,7 +288,7 @@ public class IntegrationTests
     [Fact]
     public void UpdateAndQueryCycle()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 3 });
+        using var model = new NGramModel(new List<int> { 1, 2, 3 });
 
         for (int i = 0; i < 10; i++)
         {
@@ -308,7 +308,7 @@ public class GetTokenTests
     [Fact]
     public void ValidPositions()
     {
-        using var model = new Infinigram(new List<int> { 65, 66, 67 });
+        using var model = new NGramModel(new List<int> { 65, 66, 67 });
         model.GetToken(0).Should().Be(65);
         model.GetToken(1).Should().Be(66);
         model.GetToken(2).Should().Be(67);
@@ -317,7 +317,7 @@ public class GetTokenTests
     [Fact]
     public void OutOfBoundsPositive()
     {
-        using var model = new Infinigram(new List<int> { 65, 66, 67 });
+        using var model = new NGramModel(new List<int> { 65, 66, 67 });
         Action act = () => model.GetToken(10);
         act.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*out of range*");
     }
@@ -325,7 +325,7 @@ public class GetTokenTests
     [Fact]
     public void OutOfBoundsNegative()
     {
-        using var model = new Infinigram(new List<int> { 65, 66, 67 });
+        using var model = new NGramModel(new List<int> { 65, 66, 67 });
         Action act = () => model.GetToken(-1);
         act.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*out of range*");
     }
@@ -333,7 +333,7 @@ public class GetTokenTests
     [Fact]
     public void AtBoundary()
     {
-        using var model = new Infinigram(new List<int> { 65, 66, 67 });
+        using var model = new NGramModel(new List<int> { 65, 66, 67 });
         model.GetToken(2).Should().Be(67);
         Action act = () => model.GetToken(3);
         act.Should().Throw<ArgumentOutOfRangeException>();
@@ -345,7 +345,7 @@ public class GenerateTests
     [Fact]
     public void ReturnsTokenIds()
     {
-        using var model = new Infinigram(TestData.B(string.Concat(Enumerable.Repeat("the cat sat on the mat ", 50))).ToArray());
+        using var model = new NGramModel(TestData.B(string.Concat(Enumerable.Repeat("the cat sat on the mat ", 50))).ToArray());
         var result = model.Generate(TestData.B("the "), maxTokens: 10, temperature: 0.5, rng: new Random(123));
 
         result.Should().OnlyContain(t => t >= 0 && t <= 255);
@@ -354,7 +354,7 @@ public class GenerateTests
     [Fact]
     public void RespectsMaxTokens()
     {
-        using var model = new Infinigram(TestData.B(string.Concat(Enumerable.Repeat("abcabcabc", 100))).ToArray());
+        using var model = new NGramModel(TestData.B(string.Concat(Enumerable.Repeat("abcabcabc", 100))).ToArray());
         var result = model.Generate(TestData.B("a"), maxTokens: 5);
         result.Count.Should().BeLessThanOrEqualTo(5);
     }
@@ -362,7 +362,7 @@ public class GenerateTests
     [Fact]
     public void EmptyContextGenerates()
     {
-        using var model = new Infinigram(TestData.B(string.Concat(Enumerable.Repeat("hello world ", 50))).ToArray());
+        using var model = new NGramModel(TestData.B(string.Concat(Enumerable.Repeat("hello world ", 50))).ToArray());
         var result = model.Generate(maxTokens: 10, temperature: 0);
         result.Should().NotBeEmpty();
     }
@@ -370,7 +370,7 @@ public class GenerateTests
     [Fact]
     public void GreedyIsDeterministic()
     {
-        using var model = new Infinigram(TestData.B(string.Concat(Enumerable.Repeat("the cat sat on the mat ", 100))).ToArray());
+        using var model = new NGramModel(TestData.B(string.Concat(Enumerable.Repeat("the cat sat on the mat ", 100))).ToArray());
         var first = model.Generate(TestData.B("the cat "), maxTokens: 10, temperature: 0);
         var second = model.Generate(TestData.B("the cat "), maxTokens: 10, temperature: 0);
         first.Should().Equal(second);
@@ -379,7 +379,7 @@ public class GenerateTests
     [Fact]
     public void StopSequenceIsStripped()
     {
-        using var model = new Infinigram(TestData.B(string.Concat(Enumerable.Repeat("hello world ", 100))).ToArray());
+        using var model = new NGramModel(TestData.B(string.Concat(Enumerable.Repeat("hello world ", 100))).ToArray());
         var stop = TestData.B(" world");
         var result = model.Generate(TestData.B("hello"), maxTokens: 50, temperature: 0,
             stop: new List<IReadOnlyList<int>> { stop });
@@ -393,7 +393,7 @@ public class GenerateTests
     [Fact]
     public void MultiTokenStopStripsOnlyMatchedSuffix()
     {
-        using var model = new Infinigram(string.Concat(Enumerable.Repeat("abcdef", 10)));
+        using var model = new NGramModel(string.Concat(Enumerable.Repeat("abcdef", 10)));
         var result = model.Generate(TestData.B("a"), maxTokens: 10, temperature: 0,
             stop: new List<IReadOnlyList<int>> { TestData.B("cz"), TestData.B("cd") });
 
@@ -403,7 +403,7 @@ public class GenerateTests
     [Fact]
     public void TakesTokenizedInput()
     {
-        using var model = new Infinigram(TestData.B(string.Concat(Enumerable.Repeat("the quick brown fox ", 50))).ToArray());
+        using var model = new NGramModel(TestData.B(string.Concat(Enumerable.Repeat("the quick brown fox ", 50))).ToArray());
         var result = model.Generate(model.Tokenizer.Encode("the "), maxTokens: 10, temperature: 0);
         result.Should().NotBeEmpty();
     }
@@ -411,14 +411,14 @@ public class GenerateTests
     [Fact]
     public void ZeroMaxTokensReturnsEmpty()
     {
-        using var model = new Infinigram(TestData.B("hello").ToArray());
+        using var model = new NGramModel(TestData.B("hello").ToArray());
         model.Generate(TestData.B("h"), maxTokens: 0).Should().BeEmpty();
     }
 
     [Fact]
     public void GenerateTextDecodesToString()
     {
-        using var model = new Infinigram(TestData.B(string.Concat(Enumerable.Repeat("the cat sat on the mat ", 50))).ToArray());
+        using var model = new NGramModel(TestData.B(string.Concat(Enumerable.Repeat("the cat sat on the mat ", 50))).ToArray());
         var text = model.GenerateText("the ", maxTokens: 10, temperature: 0);
         text.Should().NotBeNull();
     }
@@ -429,7 +429,7 @@ public class ScoreTests
     [Fact]
     public void ReturnsNegativeForTypicalInput()
     {
-        using var model = new Infinigram(TestData.B(string.Concat(Enumerable.Repeat("the cat sat on the mat ", 50))).ToArray());
+        using var model = new NGramModel(TestData.B(string.Concat(Enumerable.Repeat("the cat sat on the mat ", 50))).ToArray());
         var result = model.Score(TestData.B("the cat"));
         double.IsFinite(result).Should().BeTrue();
     }
@@ -437,21 +437,21 @@ public class ScoreTests
     [Fact]
     public void LogProbabilitiesAreNonPositive()
     {
-        using var model = new Infinigram(TestData.B(string.Concat(Enumerable.Repeat("abcabc", 100))).ToArray());
+        using var model = new NGramModel(TestData.B(string.Concat(Enumerable.Repeat("abcabc", 100))).ToArray());
         model.Score(TestData.B("abc")).Should().BeLessThanOrEqualTo(0.0);
     }
 
     [Fact]
     public void EmptySequenceScoresZero()
     {
-        using var model = new Infinigram(TestData.B("hello").ToArray());
+        using var model = new NGramModel(TestData.B("hello").ToArray());
         model.Score(new List<int>()).Should().Be(0.0);
     }
 
     [Fact]
     public void InDistributionScoresHigherThanRandom()
     {
-        using var model = new Infinigram(TestData.B(string.Concat(Enumerable.Repeat("the quick brown fox jumps over the lazy dog ", 100))).ToArray());
+        using var model = new NGramModel(TestData.B(string.Concat(Enumerable.Repeat("the quick brown fox jumps over the lazy dog ", 100))).ToArray());
         var inDistribution = model.Score(TestData.B("the quick brown"));
         var random = model.Score(Enumerable.Range(0, 15).ToList());
         inDistribution.Should().BeGreaterThan(random);
@@ -460,14 +460,14 @@ public class ScoreTests
     [Fact]
     public void TokenizedInputScoresNegative()
     {
-        using var model = new Infinigram(TestData.B(string.Concat(Enumerable.Repeat("hello world ", 50))).ToArray());
+        using var model = new NGramModel(TestData.B(string.Concat(Enumerable.Repeat("hello world ", 50))).ToArray());
         model.Score(model.Tokenizer.Encode("hello")).Should().BeLessThan(0.0);
     }
 
     [Fact]
     public void LongerSequenceAccumulatesMoreLogProb()
     {
-        using var model = new Infinigram(TestData.B(string.Concat(Enumerable.Repeat("abcdefghijklmnop ", 100))).ToArray());
+        using var model = new NGramModel(TestData.B(string.Concat(Enumerable.Repeat("abcdefghijklmnop ", 100))).ToArray());
         var shortScore = model.Score(TestData.B("abc"));
         var longScore = model.Score(TestData.B("abcdefgh"));
         longScore.Should().BeLessThan(shortScore);

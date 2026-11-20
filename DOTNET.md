@@ -12,15 +12,15 @@ Infinigram.slnx                     # Solution (new XML format)
 global.json                         # Selects the Microsoft.Testing.Platform runner for `dotnet test`
 src/Infinigram/
   Infinigram.csproj                 # net11.0 class library
-  Infinigram.cs                     # Model API and lifecycle
-  Infinigram.Persistence.cs         # Public model build and load methods
-  InfinigramStorage.cs              # Model persistence and metadata
+  NGramModel.cs                     # Model API and lifecycle
+  NGramModel.Persistence.cs         # Public model build and load methods
+  ModelStorage.cs                   # Model persistence and metadata
   ContinuationCounter.cs            # Continuation counts and cache
   ContextKey.cs                     # Continuation cache key
-  InfinigramSuffixMatcher.cs        # Longest-suffix matching
-  InfinigramPredictor.cs            # Prediction probabilities
-  InfinigramGenerator.cs            # Token and text generation
-  InfinigramScorer.cs               # Sequence scoring
+  SuffixMatcher.cs                  # Longest-suffix matching
+  TokenPredictor.cs                 # Prediction probabilities
+  TextGenerator.cs                  # Token and text generation
+  SequenceScorer.cs                 # Sequence scoring
   SuffixArray.cs                    # Suffix-array queries and public API
   SuffixArraySearch.cs              # Suffix-array search and counting
   SuffixArrayBuilder.cs             # Suffix-array construction
@@ -92,7 +92,7 @@ tokenizing, including after loading a persisted model:
 
 ```csharp
 var options = new TextNormalizationOptions { Lowercase = true };
-using var model = new Infinigram(TextNormalizer.Normalize(corpus, options));
+using var model = new NGramModel(TextNormalizer.Normalize(corpus, options));
 var query = model.Tokenizer.Encode(TextNormalizer.Normalize(input, options));
 var matches = model.Search(query);
 ```
@@ -102,10 +102,13 @@ Do not apply it to arbitrary binary corpora.
 
 ## Quick example
 
+The public model class is `NGramModel` (previously `Infinigram`); existing C#
+callers must update references. The namespace and saved model format are unchanged.
+
 ```csharp
 using Infinigram;
 
-using var model = new Infinigram("the cat sat on the mat the cat ran");
+using var model = new NGramModel("the cat sat on the mat the cat ran");
 var context = model.Tokenizer.Encode("the cat");
 
 var probs = model.Predict(context, topK: 5);        // token id -> probability
@@ -117,8 +120,8 @@ string text = model.GenerateText("the cat ", maxTokens: 20, temperature: 0.8);
 Persistent models:
 
 ```csharp
-Infinigram.Build("The quick brown fox jumps over the lazy dog.", "my_model");
-using var model = Infinigram.Load("my_model");      // or a bare name under ~/.infinigram/models
+NGramModel.Build("The quick brown fox jumps over the lazy dog.", "my_model");
+using var model = NGramModel.Load("my_model");      // or a bare name under ~/.infinigram/models
 ```
 
 ## Status vs. the Python reference

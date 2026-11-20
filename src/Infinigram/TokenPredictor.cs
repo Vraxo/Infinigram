@@ -1,8 +1,8 @@
 namespace Infinigram;
 
-internal static class InfinigramPredictor
+internal static class TokenPredictor
 {
-    internal static IReadOnlyDictionary<int, double>? Predict(Infinigram model, IReadOnlyList<int> context, int topK = 50, double smoothing = 0.0)
+    internal static IReadOnlyDictionary<int, double>? Predict(NGramModel model, IReadOnlyList<int> context, int topK = 50, double smoothing = 0.0)
     {
         ArgumentNullException.ThrowIfNull(context);
         if (topK < 1)
@@ -48,7 +48,7 @@ internal static class InfinigramPredictor
         return probs;
     }
 
-    internal static IReadOnlyDictionary<int, double>? PredictLogprobs(Infinigram model, IReadOnlyList<int> context, int topK = 50,
+    internal static IReadOnlyDictionary<int, double>? PredictLogprobs(NGramModel model, IReadOnlyList<int> context, int topK = 50,
         double smoothing = 1e-10)
     {
         var probs = model.Predict(context, topK, smoothing);

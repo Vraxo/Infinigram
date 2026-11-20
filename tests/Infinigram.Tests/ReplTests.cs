@@ -1,6 +1,6 @@
 using AwesomeAssertions;
 using Infinigram.Repl;
-using Model = Infinigram.Infinigram;
+using Model = Infinigram.NGramModel;
 
 namespace Infinigram.Tests;
 

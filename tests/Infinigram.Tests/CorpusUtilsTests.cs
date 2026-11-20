@@ -183,21 +183,21 @@ public class ByteTokenizerModelRoundTripTests
     [Fact]
     public void RoundTripAscii()
     {
-        using var model = new Infinigram("The quick brown fox");
+        using var model = new NGramModel("The quick brown fox");
         model.Tokenizer.Decode(model.Tokenizer.Encode("The quick brown fox")).Should().Be("The quick brown fox");
     }
 
     [Fact]
     public void RoundTripUnicode()
     {
-        using var model = new Infinigram("cafe 世界");
+        using var model = new NGramModel("cafe 世界");
         model.Tokenizer.Decode(model.Tokenizer.Encode("cafe 世界")).Should().Be("cafe 世界");
     }
 
     [Fact]
     public void ByteModelGeneratesTokenIds()
     {
-        using var model = new Infinigram(TestData.B("hello hello hello").ToArray());
+        using var model = new NGramModel(TestData.B("hello hello hello").ToArray());
         var output = model.Generate(TestData.B("hell"), maxTokens: 5, temperature: 0);
         output.Should().OnlyContain(t => t >= 0 && t <= 255);
         model.Tokenizer.Decode(output).Should().NotBeEmpty();

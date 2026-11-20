@@ -1,6 +1,6 @@
 namespace Infinigram;
 
-internal static class InfinigramSuffixMatcher
+internal static class SuffixMatcher
 {
     internal static List<int> SearchSuffix(SuffixArray suffixArray, List<int> context, int suffixLength, int? limit)
     {
