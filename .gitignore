@@ -4,6 +4,7 @@ obj/
 out/
 TestResults/
 artifacts/
+BenchmarkDotNet.Artifacts/
 
 # IDE
 .vs/
