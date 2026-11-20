@@ -22,7 +22,7 @@ internal static class TestData
 internal sealed class TempDir : IDisposable
 {
     public string Path { get; } =
-        Path.Combine(Path.GetTempPath(), "infinigram_tests_" + Guid.NewGuid().ToString("N"));
+        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "infinigram_tests_" + Guid.NewGuid().ToString("N"));
 
     public TempDir()
     {
