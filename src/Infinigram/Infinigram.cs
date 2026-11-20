@@ -1,26 +1,11 @@
-
-using System.Diagnostics;
-using System.Runtime.InteropServices;
-using System.Text.Json;
-using System.Text.Json.Nodes;
-
 namespace Infinigram;
 
-public sealed class Infinigram : IDisposable
+public sealed partial class Infinigram : IDisposable
 {
     public const int DefaultContinuationLimit = 10000;
 
-    private const int DefaultCacheSize = 1000;
-
-    private static string DefaultModelsDir => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        ".infinigram", "models");
-
-    private static readonly JsonSerializerOptions JsonWriteOptions = new() { WriteIndented = true };
-
     private SuffixArray _sa = null!;
-    private readonly LruCache<ContextKey, Dictionary<int, int>?> _cache = new(DefaultCacheSize);
-    private Dictionary<int, int>? _uniformCounts;
+    private readonly ContinuationCounter _continuations = new();
     private string? _modelDir;
     private bool _disposed;
 
@@ -83,271 +68,6 @@ public sealed class Infinigram : IDisposable
     }
 
 
-    public static Infinigram Build(string corpus, string modelPath, ITokenizer? tokenizer = null,
-        int? maxLength = null, bool verbose = true)
-    {
-        ArgumentNullException.ThrowIfNull(corpus);
-        ArgumentNullException.ThrowIfNull(modelPath);
-        var tok = tokenizer ?? new ByteTokenizer();
-        return BuildFromTokens(tok.Encode(corpus).ToList(), modelPath, tok, maxLength, verbose);
-    }
-
-    public static Infinigram Build(byte[] corpus, string modelPath, ITokenizer? tokenizer = null,
-        int? maxLength = null, bool verbose = true)
-    {
-        ArgumentNullException.ThrowIfNull(corpus);
-        ArgumentNullException.ThrowIfNull(modelPath);
-        var tok = tokenizer ?? new ByteTokenizer();
-        if (tok.VocabSize > 256)
-        {
-            throw new ArgumentException(
-                $"bytes corpora are only supported with byte-level tokenizers; " +
-                $"tokenizer has VocabSize={tok.VocabSize}. Pass IReadOnlyList<int> instead.",
-                nameof(corpus));
-        }
-        return BuildFromTokens(corpus.Select(b => (int)b).ToList(), modelPath, tok, maxLength, verbose);
-    }
-
-    public static Infinigram Build(IReadOnlyList<int> corpus, string modelPath, ITokenizer? tokenizer = null,
-        int? maxLength = null, bool verbose = true)
-    {
-        ArgumentNullException.ThrowIfNull(corpus);
-        ArgumentNullException.ThrowIfNull(modelPath);
-        return BuildFromTokens(corpus.ToList(), modelPath, tokenizer ?? new ByteTokenizer(), maxLength, verbose);
-    }
-
-    public static Infinigram BuildFromFile(string corpusFilePath, string modelPath, ITokenizer? tokenizer = null,
-        int? maxLength = null, bool verbose = true)
-    {
-        ArgumentNullException.ThrowIfNull(corpusFilePath);
-        ArgumentNullException.ThrowIfNull(modelPath);
-        if (!File.Exists(corpusFilePath))
-        {
-            throw new FileNotFoundException($"Corpus file not found: {corpusFilePath}", corpusFilePath);
-        }
-
-        var tok = tokenizer ?? new ByteTokenizer();
-        List<int> tokens;
-        if (tok.VocabSize <= 256)
-        {
-            if (verbose)
-            {
-                Console.WriteLine($"Loading corpus from {corpusFilePath}...");
-            }
-            tokens = File.ReadAllBytes(corpusFilePath).Select(b => (int)b).ToList();
-        }
-        else
-        {
-            tokens = tok.Encode(File.ReadAllText(corpusFilePath)).ToList();
-        }
-        return BuildFromTokens(tokens, modelPath, tok, maxLength, verbose);
-    }
-
-    private static Infinigram BuildFromTokens(List<int> tokens, string modelPath, ITokenizer tokenizer,
-        int? maxLength, bool verbose)
-    {
-        if (tokens.Count == 0)
-        {
-            throw new ArgumentException("Corpus must not be empty.", nameof(tokens));
-        }
-
-        var stopwatch = Stopwatch.StartNew();
-        string fullPath = Path.GetFullPath(modelPath);
-        var model = new Infinigram(tokenizer, maxLength);
-
-        var validated = model.ValidateCorpus(tokens, "Corpus");
-        int n = validated.Length;
-        if (verbose)
-        {
-            Console.WriteLine($"Building model at {fullPath}");
-            Console.WriteLine($"Corpus: {n:N0} tokens (vocab={tokenizer.VocabSize})");
-            Console.WriteLine("Building suffix array...");
-        }
-
-        var sa = new SuffixArray(validated);
-        sa.Save(fullPath);
-
-        model._sa = sa;
-        model._modelDir = fullPath;
-        model.WriteMeta(fullPath, n);
-
-        if (verbose)
-        {
-            double elapsed = stopwatch.Elapsed.TotalSeconds;
-            double rate = elapsed > 0 ? n / elapsed / 1e6 : double.PositiveInfinity;
-            Console.WriteLine($"Built in {elapsed:F1}s ({rate:F2} MT/sec)");
-        }
-        return model;
-    }
-
-    public static Infinigram Load(string modelPath, ITokenizer? tokenizer = null, int? maxLength = null)
-    {
-        ArgumentNullException.ThrowIfNull(modelPath);
-
-        string dir = modelPath;
-        if (!Path.IsPathRooted(modelPath) && !Directory.Exists(modelPath))
-        {
-            string candidate = Path.Combine(DefaultModelsDir, modelPath);
-            if (Directory.Exists(candidate))
-            {
-                dir = candidate;
-            }
-        }
-
-        if (!Directory.Exists(dir))
-        {
-            throw new FileNotFoundException(
-                $"Model not found at {dir}. Use Infinigram.Build(...) to create a new model.");
-        }
-
-        string metaPath = Path.Combine(dir, "meta.json");
-        if (!File.Exists(metaPath))
-        {
-            throw new FileNotFoundException(
-                $"Model not found at {dir} (missing meta.json). Use Infinigram.Build(...) to create a new model.");
-        }
-
-        JsonObject meta;
-        try
-        {
-            meta = JsonNode.Parse(File.ReadAllText(metaPath)) as JsonObject
-                   ?? throw new JsonException("meta.json is not a JSON object");
-        }
-        catch (JsonException ex)
-        {
-            throw new InvalidDataException($"Corrupt meta.json at {metaPath}: {ex.Message}", ex);
-        }
-
-        int version = meta.TryGetPropertyValue("version", out var versionNode) && versionNode is not null
-            ? versionNode.GetValue<int>()
-            : 0;
-        if (version != 1)
-        {
-            throw new NotSupportedException(
-                $"Unsupported model format version {version} at {metaPath}. This engine reads C#-built " +
-                "indexes (version 1). If this is a Python-built model (.npy files, version 2), it is " +
-                "not supported yet — rebuild it with Infinigram.Build.");
-        }
-
-        ITokenizer resolved = ResolveTokenizer(meta, metaPath, tokenizer);
-
-        if (meta.TryGetPropertyValue("vocab_size", out var vocabNode) && vocabNode is not null)
-        {
-            int metaVocab = vocabNode.GetValue<int>();
-            if (metaVocab != resolved.VocabSize)
-            {
-                throw new InvalidDataException(
-                    $"Tokenizer mismatch: model at {dir} was built with vocab_size={metaVocab}, " +
-                    $"but the resolved tokenizer has VocabSize={resolved.VocabSize}.");
-            }
-        }
-
-        int? metaMaxLength = null;
-        if (meta.TryGetPropertyValue("max_length", out var maxLengthNode) && maxLengthNode is not null)
-        {
-            metaMaxLength = maxLengthNode.GetValue<int>();
-        }
-
-        var model = new Infinigram(resolved, maxLength ?? metaMaxLength);
-        string fullDir = Path.GetFullPath(dir);
-        model._sa = SuffixArray.Load(fullDir);
-        model._modelDir = fullDir;
-
-        if (meta.TryGetPropertyValue("n", out var nNode) && nNode is not null)
-        {
-            int metaN = nNode.GetValue<int>();
-            if (metaN != model.N)
-            {
-                throw new InvalidDataException(
-                    $"Corrupt model at {dir}: meta.json says n={metaN} but the corpus has {model.N} tokens.");
-            }
-        }
-        return model;
-    }
-
-    public static List<string> ListModels(string? modelsDir = null)
-    {
-        string dir = modelsDir ?? DefaultModelsDir;
-        if (!Directory.Exists(dir))
-        {
-            return new List<string>();
-        }
-        return Directory
-            .EnumerateDirectories(dir)
-            .Where(d => File.Exists(Path.Combine(d, "meta.json")))
-            .Select(Path.GetFileName)
-            .Where(name => name is not null)
-            .Select(name => name!)
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToList();
-    }
-
-    private static ITokenizer ResolveTokenizer(JsonObject meta, string metaPath, ITokenizer? supplied)
-    {
-        string? kind = null;
-        string? customName = null;
-        if (meta.TryGetPropertyValue("tokenizer", out var tokenizerNode) && tokenizerNode is JsonObject tokConfig)
-        {
-            kind = tokConfig.TryGetPropertyValue("kind", out var kindNode) ? kindNode?.GetValue<string>() : null;
-            if (tokConfig.TryGetPropertyValue("name", out var nameNode))
-            {
-                customName = nameNode?.GetValue<string>();
-            }
-        }
-
-        switch (kind)
-        {
-            case "byte":
-                if (supplied is not null && supplied is not ByteTokenizer)
-                {
-                    throw new ArgumentException(
-                        "Tokenizer mismatch: model was built with a byte tokenizer but a different " +
-                        "tokenizer was supplied. Pass the matching tokenizer or omit tokenizer:.");
-                }
-                return new ByteTokenizer();
-
-            case "custom":
-                if (supplied is null)
-                {
-                    throw new InvalidOperationException(
-                        $"Model at {metaPath} was built with a custom tokenizer ({customName}). " +
-                        "Pass tokenizer: when loading.");
-                }
-                return supplied;
-
-            case null:
-                return supplied ?? new ByteTokenizer();
-
-            default:
-                if (supplied is null)
-                {
-                    throw new NotSupportedException(
-                        $"Unknown tokenizer kind '{kind}' in {metaPath}. Pass tokenizer: explicitly.");
-                }
-                return supplied;
-        }
-    }
-
-    private void WriteMeta(string dir, int n)
-    {
-        var tokenizerConfig = Tokenizer is ByteTokenizer
-            ? new Dictionary<string, object?> { ["kind"] = "byte", ["encoding"] = "utf-8", ["errors"] = "replace" }
-            : new Dictionary<string, object?> { ["kind"] = "custom", ["name"] = Tokenizer.GetType().FullName };
-
-        var meta = new Dictionary<string, object?>
-        {
-            ["version"] = 1,
-            ["engine"] = "infinigram-csharp",
-            ["n"] = n,
-            ["vocab_size"] = VocabSize,
-            ["max_length"] = MaxLength,
-            ["tokenizer"] = tokenizerConfig,
-        };
-        File.WriteAllText(
-            Path.Combine(dir, "meta.json"),
-            JsonSerializer.Serialize(meta, JsonWriteOptions));
-    }
-
     private int[] ValidateCorpus(IReadOnlyList<int> tokens, string what)
     {
         if (tokens.Count == 0)
@@ -382,47 +102,6 @@ public sealed class Infinigram : IDisposable
         return context.ToList();
     }
 
-    private List<int> SearchSuffix(List<int> context, int suffixLength, int? limit)
-    {
-        var pattern = context.GetRange(context.Count - suffixLength, suffixLength);
-        return _sa.Search(pattern, limit);
-    }
-
-    private (int Length, int Position) LongestMatchLength(List<int> context)
-    {
-        if (context.Count == 0)
-        {
-            return (0, -1);
-        }
-
-        var first = SearchSuffix(context, 1, limit: 1);
-        if (first.Count == 0)
-        {
-            return (0, -1);
-        }
-
-        int bestLength = 1;
-        int bestPosition = first[0];
-        int lo = 1, hi = context.Count;
-        while (lo < hi)
-        {
-            int mid = (lo + hi + 1) / 2;
-            var results = SearchSuffix(context, mid, limit: 1);
-            if (results.Count > 0)
-            {
-                lo = mid;
-                bestLength = mid;
-                bestPosition = results[0];
-            }
-            else
-            {
-                hi = mid - 1;
-            }
-        }
-        return (bestLength, bestPosition);
-    }
-
-
     public List<int> Search(IReadOnlyList<int> pattern, int? limit = null)
     {
         ThrowIfDisposed();
@@ -453,7 +132,7 @@ public sealed class Infinigram : IDisposable
         }
 
         var ctx = ApplyMaxLength(context);
-        var (length, position) = LongestMatchLength(ctx);
+        var (length, position) = InfinigramSuffixMatcher.LongestMatchLength(_sa, ctx);
         return length == 0 ? (-1, 0) : (position, length);
     }
 
@@ -470,7 +149,7 @@ public sealed class Infinigram : IDisposable
         var matches = new List<(int Length, List<int> Positions)>();
         for (int length = ctx.Count; length > 0; length--)
         {
-            var positions = SearchSuffix(ctx, length, limit: null);
+            var positions = InfinigramSuffixMatcher.SearchSuffix(_sa, ctx, length, limit: null);
             if (positions.Count > 0)
             {
                 matches.Add((length, positions));
@@ -483,258 +162,47 @@ public sealed class Infinigram : IDisposable
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(context);
-
-        if (context.Count == 0)
-        {
-            return UniformCounts();
-        }
-
-        var ctx = ApplyMaxLength(context);
-        var cacheKey = new ContextKey(ctx, limit);
-        if (_cache.TryGet(cacheKey, out var cached))
-        {
-            return cached is null ? null : new Dictionary<int, int>(cached);
-        }
-
-        var (matchLength, _) = LongestMatchLength(ctx);
-        if (matchLength == 0)
-        {
-            _cache.Set(cacheKey, null);
-            return null;
-        }
-
-        for (int length = matchLength; length > 0; length--)
-        {
-            var positions = SearchSuffix(ctx, length, limit);
-            Dictionary<int, int>? counts = null;
-            foreach (int pos in positions)
-            {
-                int next = pos + length;
-                if (next >= N)
-                {
-                    continue;
-                }
-                int token = _sa.GetToken(next);
-                counts ??= new Dictionary<int, int>();
-                counts[token] = counts.TryGetValue(token, out var c) ? c + 1 : 1;
-            }
-
-            if (counts is { Count: > 0 })
-            {
-                _cache.Set(cacheKey, new Dictionary<int, int>(counts));
-                return counts;
-            }
-        }
-
-        _cache.Set(cacheKey, null);
-        return null;
+        return _continuations.Get(_sa, VocabSize, ApplyMaxLength(context), limit);
     }
 
-    private Dictionary<int, int> UniformCounts()
-    {
-        if (_uniformCounts is null)
-        {
-            _uniformCounts = new Dictionary<int, int>(VocabSize);
-            for (int t = 0; t < VocabSize; t++)
-            {
-                _uniformCounts[t] = 1;
-            }
-        }
-        return new Dictionary<int, int>(_uniformCounts);
-    }
+    public void ClearCache() => _continuations.Clear();
 
-    public void ClearCache()
-    {
-        _cache.Clear();
-    }
-
-    internal int ContinuationsCacheCount => _cache.Count;
+    internal int ContinuationsCacheCount => _continuations.Count;
 
     internal int ContinuationsCacheCapacity
     {
-        get => _cache.Capacity;
-        set => _cache.SetCapacity(value);
+        get => _continuations.Capacity;
+        set => _continuations.Capacity = value;
     }
 
     public IReadOnlyDictionary<int, double>? Predict(IReadOnlyList<int> context, int topK = 50, double smoothing = 0.0)
     {
         ThrowIfDisposed();
-        ArgumentNullException.ThrowIfNull(context);
-        if (topK < 1)
-        {
-            topK = 1;
-        }
-
-        var counts = Continuations(context);
-        if (counts is null)
-        {
-            return null;
-        }
-
-        double total = 0;
-        foreach (var c in counts.Values)
-        {
-            total += c;
-        }
-        double smoothedTotal = total + smoothing * VocabSize;
-
-        var probs = new Dictionary<int, double>(counts.Count);
-        foreach (var (token, count) in counts)
-        {
-            probs[token] = (count + smoothing) / smoothedTotal;
-        }
-
-        if (smoothing > 0.0)
-        {
-            double unseen = smoothing / smoothedTotal;
-            for (int t = 0; t < VocabSize; t++)
-            {
-                probs.TryAdd(t, unseen);
-            }
-        }
-
-        if (probs.Count > topK)
-        {
-            probs = probs
-                .OrderByDescending(kv => kv.Value)
-                .Take(topK)
-                .ToDictionary(kv => kv.Key, kv => kv.Value);
-        }
-        return probs;
+        return InfinigramPredictor.Predict(this, context, topK, smoothing);
     }
 
     public IReadOnlyDictionary<int, double>? PredictLogprobs(IReadOnlyList<int> context, int topK = 50,
-        double smoothing = 1e-10)
-    {
-        var probs = Predict(context, topK, smoothing);
-        if (probs is null)
-        {
-            return null;
-        }
-        var logprobs = new Dictionary<int, double>(probs.Count);
-        foreach (var (token, p) in probs)
-        {
-            logprobs[token] = Math.Log(p);
-        }
-        return logprobs;
-    }
+        double smoothing = 1e-10) => InfinigramPredictor.PredictLogprobs(this, context, topK, smoothing);
 
-    public List<int> Generate(
-        IReadOnlyList<int>? context = null,
-        int maxTokens = 100,
-        double temperature = 1.0,
-        int? topK = null,
-        double smoothing = 0.0,
-        IEnumerable<IReadOnlyList<int>>? stop = null,
-        Random? rng = null)
+    public List<int> Generate(IReadOnlyList<int>? context = null, int maxTokens = 100,
+        double temperature = 1.0, int? topK = null, double smoothing = 0.0,
+        IEnumerable<IReadOnlyList<int>>? stop = null, Random? rng = null)
     {
         ThrowIfDisposed();
-        int effectiveTopK = topK is null ? VocabSize : Math.Clamp(topK.Value, 1, VocabSize);
-
-        var currentContext = context?.ToList() ?? new List<int>();
-        var generated = new List<int>();
-
-        var stopLists = stop?
-            .Where(s => s is { Count: > 0 })
-            .Select(s => s.ToList())
-            .ToList();
-
-        for (int step = 0; step < maxTokens; step++)
-        {
-            var probs = Predict(currentContext, topK: effectiveTopK, smoothing: smoothing);
-            if (probs is null || probs.Count == 0)
-            {
-                break;
-            }
-
-            int nextToken = Sampling.SampleFromDistribution(probs, temperature, rng);
-            generated.Add(nextToken);
-            currentContext.Add(nextToken);
-
-            if (stopLists is not null)
-            {
-                foreach (var stopSeq in stopLists)
-                {
-                    int stopLength = stopSeq.Count;
-                    if (generated.Count >= stopLength &&
-                        CollectionsMarshal.AsSpan(generated)[^stopLength..].SequenceEqual(CollectionsMarshal.AsSpan(stopSeq)))
-                    {
-                        generated.RemoveRange(generated.Count - stopLength, stopLength);
-                        return generated;
-                    }
-                }
-            }
-        }
-
-        return generated;
+        return InfinigramGenerator.Generate(this, context, maxTokens, temperature, topK, smoothing, stop, rng);
     }
 
-    public string GenerateText(
-        string context = "",
-        int maxTokens = 100,
-        double temperature = 1.0,
-        int? topK = 50,
-        double smoothing = 0.0,
-        IEnumerable<string>? stop = null,
-        Random? rng = null)
+    public string GenerateText(string context = "", int maxTokens = 100, double temperature = 1.0,
+        int? topK = 50, double smoothing = 0.0, IEnumerable<string>? stop = null, Random? rng = null)
     {
         ThrowIfDisposed();
-        var seedTokens = string.IsNullOrEmpty(context)
-            ? new List<int>()
-            : Tokenizer.Encode(context).ToList();
-        var stopTokens = stop?
-            .Where(s => s.Length > 0)
-            .Select(s => Tokenizer.Encode(s).ToList())
-            .ToList();
-
-        var tokens = Generate(
-            context: seedTokens,
-            maxTokens: maxTokens,
-            temperature: temperature,
-            topK: topK,
-            smoothing: smoothing,
-            stop: stopTokens,
-            rng: rng);
-        return Tokenizer.Decode(tokens);
+        return InfinigramGenerator.GenerateText(this, context, maxTokens, temperature, topK, smoothing, stop, rng);
     }
 
     public double Score(IReadOnlyList<int> sequence, double smoothing = 1e-10)
     {
         ThrowIfDisposed();
-        ArgumentNullException.ThrowIfNull(sequence);
-        if (sequence.Count == 0)
-        {
-            return 0.0;
-        }
-
-        double uniformLp = Math.Log(1.0 / VocabSize);
-        double totalLp = uniformLp;
-
-        for (int i = 1; i < sequence.Count; i++)
-        {
-            var context = sequence.Take(i).ToList();
-            var counts = Continuations(context);
-            if (counts is null)
-            {
-                totalLp += uniformLp;
-                continue;
-            }
-
-            double total = 0;
-            foreach (var c in counts.Values)
-            {
-                total += c;
-            }
-            counts.TryGetValue(sequence[i], out int count);
-            double prob = (count + smoothing) / (total + smoothing * VocabSize);
-            if (prob <= 0)
-            {
-                return double.NegativeInfinity;
-            }
-            totalLp += Math.Log(prob);
-        }
-
-        return totalLp;
+        return InfinigramScorer.Score(this, sequence, smoothing);
     }
 
     public void Update(IReadOnlyList<int> newTokens)
@@ -803,7 +271,7 @@ public sealed class Infinigram : IDisposable
             return;
         }
         _disposed = true;
-        _cache.Clear();
+        _continuations.Clear();
     }
 
     public override string ToString() =>
@@ -816,34 +284,6 @@ public sealed class Infinigram : IDisposable
         if (_disposed)
         {
             throw new ObjectDisposedException(nameof(Infinigram));
-        }
-    }
-
-    private readonly struct ContextKey : IEquatable<ContextKey>
-    {
-        private readonly int[] _items;
-        private readonly int _limit;
-
-        public ContextKey(IReadOnlyList<int> items, int? limit)
-        {
-            _items = items as int[] ?? items.ToArray();
-            _limit = limit ?? -1;
-        }
-
-        public bool Equals(ContextKey other) =>
-            _limit == other._limit && _items.AsSpan().SequenceEqual(other._items);
-
-        public override bool Equals(object? obj) => obj is ContextKey other && Equals(other);
-
-        public override int GetHashCode()
-        {
-            var hash = new HashCode();
-            hash.Add(_limit);
-            for (int i = 0; i < _items.Length; i++)
-            {
-                hash.Add(_items[i]);
-            }
-            return hash.ToHashCode();
         }
     }
 }

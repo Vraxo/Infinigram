@@ -12,7 +12,14 @@ Infinigram.slnx                     # Solution (new XML format)
 global.json                         # Selects the Microsoft.Testing.Platform runner for `dotnet test`
 src/Infinigram/
   Infinigram.csproj                 # net11.0 class library
-  Infinigram.cs                     # Model: predict / continuations / generate / score / I/O
+  Infinigram.cs                     # Model API and lifecycle
+  Infinigram.Persistence.cs         # Model build, load and metadata (partial model)
+  ContinuationCounter.cs            # Continuation counts and cache
+  ContextKey.cs                     # Continuation cache key
+  InfinigramSuffixMatcher.cs        # Longest-suffix matching
+  InfinigramPredictor.cs            # Prediction probabilities
+  InfinigramGenerator.cs            # Token and text generation
+  InfinigramScorer.cs               # Sequence scoring
   SuffixArray.cs                    # Suffix-array queries and public API
   SuffixArraySearch.cs              # Suffix-array search and counting
   SuffixArrayBuilder.cs             # Suffix-array construction

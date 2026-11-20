@@ -27,6 +27,25 @@ public class PersistenceTests : IDisposable
     }
 
     [Fact]
+    public void UpdatedModelReloadsWithMatchingInferenceResults()
+    {
+        var modelPath = _temp.SubDir("updated-model");
+        var context = TestData.B("abc");
+        using var built = Infinigram.Build("abcabc", modelPath, verbose: false);
+        _ = built.Continuations(context);
+        built.Update("dabc");
+
+        using var loaded = Infinigram.Load(modelPath);
+        loaded.Count(context).Should().Be(built.Count(context));
+        loaded.LongestSuffix(context).Should().Be(built.LongestSuffix(context));
+        loaded.Continuations(context).Should().BeEquivalentTo(built.Continuations(context));
+        loaded.Predict(context).Should().BeEquivalentTo(built.Predict(context));
+        loaded.GenerateText("abc", maxTokens: 5, temperature: 0)
+            .Should().Be(built.GenerateText("abc", maxTokens: 5, temperature: 0));
+        loaded.Score(TestData.B("abcd")).Should().Be(built.Score(TestData.B("abcd")));
+    }
+
+    [Fact]
     public void LoadProducesSamePredictions()
     {
         var modelPath = _temp.SubDir("model");
