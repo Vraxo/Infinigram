@@ -1,3 +1,5 @@
+using Infinigram;
 using Infinigram.Repl;
 
-return ReplSession.Run(Console.In, Console.Out, Console.Error, "corpus.txt");
+TextNormalizationOptions? normalization = null;
+return ReplSession.Run(Console.In, Console.Out, Console.Error, "corpus.txt", normalization);

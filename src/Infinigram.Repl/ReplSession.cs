@@ -1,15 +1,20 @@
+using System.Text;
 using Model = Infinigram.Infinigram;
 
 namespace Infinigram.Repl;
 
 public static class ReplSession
 {
-    public static int Run(TextReader input, TextWriter output, TextWriter error, string corpusPath)
+    public static int Run(TextReader input, TextWriter output, TextWriter error, string corpusPath,
+        TextNormalizationOptions? normalization = null)
     {
         Model model;
         try
         {
-            model = new Model(File.ReadAllBytes(corpusPath));
+            model = normalization is null
+                ? new Model(File.ReadAllBytes(corpusPath))
+                : new Model(TextNormalizer.Normalize(
+                    File.ReadAllText(corpusPath, new UTF8Encoding(false, true)), normalization));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
@@ -26,7 +31,8 @@ public static class ReplSession
                 output.Flush();
                 string? prompt = input.ReadLine();
                 if (prompt is null) break;
-                output.WriteLine(model.GenerateText(prompt, maxTokens: 80, temperature: 0));
+                string context = normalization is null ? prompt : TextNormalizer.Normalize(prompt, normalization);
+                output.WriteLine(model.GenerateText(context, maxTokens: 80, temperature: 0));
             }
         }
         return 0;
