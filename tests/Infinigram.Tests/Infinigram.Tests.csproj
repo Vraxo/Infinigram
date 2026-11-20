@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Infinigram\Infinigram.csproj" />
+    <ProjectReference Include="..\..\src\Infinigram.Repl\Infinigram.Repl.csproj" />
   </ItemGroup>
 
 </Project>

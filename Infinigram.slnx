@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Infinigram/Infinigram.csproj" />
+    <Project Path="src/Infinigram.Repl/Infinigram.Repl.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Infinigram.Tests/Infinigram.Tests.csproj" />
