@@ -2,9 +2,9 @@ using System.Diagnostics;
 
 namespace Infinigram;
 
-public sealed partial class Infinigram
+public sealed partial class NGramModel
 {
-    public static Infinigram Build(string corpus, string modelPath, ITokenizer? tokenizer = null,
+    public static NGramModel Build(string corpus, string modelPath, ITokenizer? tokenizer = null,
         int? maxLength = null, bool verbose = true)
     {
         ArgumentNullException.ThrowIfNull(corpus);
@@ -13,7 +13,7 @@ public sealed partial class Infinigram
         return BuildFromTokens(tok.Encode(corpus).ToList(), modelPath, tok, maxLength, verbose);
     }
 
-    public static Infinigram Build(byte[] corpus, string modelPath, ITokenizer? tokenizer = null,
+    public static NGramModel Build(byte[] corpus, string modelPath, ITokenizer? tokenizer = null,
         int? maxLength = null, bool verbose = true)
     {
         ArgumentNullException.ThrowIfNull(corpus);
@@ -29,7 +29,7 @@ public sealed partial class Infinigram
         return BuildFromTokens(corpus.Select(b => (int)b).ToList(), modelPath, tok, maxLength, verbose);
     }
 
-    public static Infinigram Build(IReadOnlyList<int> corpus, string modelPath, ITokenizer? tokenizer = null,
+    public static NGramModel Build(IReadOnlyList<int> corpus, string modelPath, ITokenizer? tokenizer = null,
         int? maxLength = null, bool verbose = true)
     {
         ArgumentNullException.ThrowIfNull(corpus);
@@ -37,7 +37,7 @@ public sealed partial class Infinigram
         return BuildFromTokens(corpus.ToList(), modelPath, tokenizer ?? new ByteTokenizer(), maxLength, verbose);
     }
 
-    public static Infinigram BuildFromFile(string corpusFilePath, string modelPath, ITokenizer? tokenizer = null,
+    public static NGramModel BuildFromFile(string corpusFilePath, string modelPath, ITokenizer? tokenizer = null,
         int? maxLength = null, bool verbose = true)
     {
         ArgumentNullException.ThrowIfNull(corpusFilePath);
@@ -64,7 +64,7 @@ public sealed partial class Infinigram
         return BuildFromTokens(tokens, modelPath, tok, maxLength, verbose);
     }
 
-    private static Infinigram BuildFromTokens(List<int> tokens, string modelPath, ITokenizer tokenizer,
+    private static NGramModel BuildFromTokens(List<int> tokens, string modelPath, ITokenizer tokenizer,
         int? maxLength, bool verbose)
     {
         if (tokens.Count == 0)
@@ -74,7 +74,7 @@ public sealed partial class Infinigram
 
         var stopwatch = Stopwatch.StartNew();
         string fullPath = Path.GetFullPath(modelPath);
-        var model = new Infinigram(tokenizer, maxLength);
+        var model = new NGramModel(tokenizer, maxLength);
 
         var validated = model.ValidateCorpus(tokens, "Corpus");
         int n = validated.Length;
@@ -86,7 +86,7 @@ public sealed partial class Infinigram
         }
 
         var sa = new SuffixArray(validated);
-        InfinigramStorage.Save(fullPath, sa, model.Tokenizer, model.VocabSize, model.MaxLength);
+        ModelStorage.Save(fullPath, sa, model.Tokenizer, model.VocabSize, model.MaxLength);
 
         model._sa = sa;
         model._modelDir = fullPath;
@@ -100,15 +100,15 @@ public sealed partial class Infinigram
         return model;
     }
 
-    public static Infinigram Load(string modelPath, ITokenizer? tokenizer = null, int? maxLength = null)
+    public static NGramModel Load(string modelPath, ITokenizer? tokenizer = null, int? maxLength = null)
     {
-        var (suffixArray, resolved, effectiveMaxLength, directory) = InfinigramStorage.Load(modelPath, tokenizer, maxLength);
-        return new Infinigram(resolved, effectiveMaxLength)
+        var (suffixArray, resolved, effectiveMaxLength, directory) = ModelStorage.Load(modelPath, tokenizer, maxLength);
+        return new NGramModel(resolved, effectiveMaxLength)
         {
             _sa = suffixArray,
             _modelDir = directory,
         };
     }
 
-    public static List<string> ListModels(string? modelsDir = null) => InfinigramStorage.ListModels(modelsDir);
+    public static List<string> ListModels(string? modelsDir = null) => ModelStorage.ListModels(modelsDir);
 }

@@ -27,7 +27,7 @@ public class TextNormalizerTests
     public void NormalizingCorpusAndQueryMakesEquivalentTextMatch()
     {
         var options = new TextNormalizationOptions { Lowercase = true };
-        using var model = new Infinigram(TextNormalizer.Normalize("CAFÉ\r\nCafe\u0301", options));
+        using var model = new NGramModel(TextNormalizer.Normalize("CAFÉ\r\nCafe\u0301", options));
         var query = TextNormalizer.Normalize("CAFE\u0301", options);
         model.Count(model.Tokenizer.Encode(query)).Should().Be(2);
     }

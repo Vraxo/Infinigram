@@ -7,7 +7,7 @@ public class ModelInitializationTests
     [Fact]
     public void InitializesWithByteVocabulary()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 3, 4, 5 });
+        using var model = new NGramModel(new List<int> { 1, 2, 3, 4, 5 });
         model.N.Should().Be(5);
         model.VocabSize.Should().Be(256);
     }
@@ -15,7 +15,7 @@ public class ModelInitializationTests
     [Fact]
     public void MaxLengthIsStored()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 3, 4, 5 }, maxLength: 3);
+        using var model = new NGramModel(new List<int> { 1, 2, 3, 4, 5 }, maxLength: 3);
         model.MaxLength.Should().Be(3);
     }
 
@@ -25,7 +25,7 @@ public class ModelInitializationTests
     [InlineData(new[] { 255 })]
     public void ValidBytesAreAccepted(int[] corpus)
     {
-        using var model = new Infinigram(corpus.ToList());
+        using var model = new NGramModel(corpus.ToList());
         model.N.Should().Be(1);
     }
 
@@ -35,7 +35,7 @@ public class ModelInitializationTests
     [InlineData(new[] { 0, 100, 300, 1000 })]
     public void InvalidBytesAreRejected(int[] corpus)
     {
-        Action act = () => new Infinigram(corpus.ToList());
+        Action act = () => new NGramModel(corpus.ToList());
         act.Should().Throw<ArgumentOutOfRangeException>()
             .WithMessage("*must contain only bytes*");
     }
@@ -43,14 +43,14 @@ public class ModelInitializationTests
     [Fact]
     public void EmptyCorpusThrows()
     {
-        Action act = () => new Infinigram(new List<int>());
+        Action act = () => new NGramModel(new List<int>());
         act.Should().Throw<ArgumentException>();
     }
 
     [Fact]
     public void UpdateRejectsOutOfRangeTokens()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 3 });
+        using var model = new NGramModel(new List<int> { 1, 2, 3 });
 
         Action act1 = () => model.Update(new List<int> { 256 });
         act1.Should().Throw<ArgumentOutOfRangeException>()
@@ -66,7 +66,7 @@ public class LongestSuffixTests
     [Fact]
     public void ExactMatch()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 3, 4, 2, 3, 5 });
+        using var model = new NGramModel(new List<int> { 1, 2, 3, 4, 2, 3, 5 });
         var (position, length) = model.LongestSuffix(new List<int> { 1, 2, 3 });
         length.Should().Be(3);
         position.Should().BeGreaterThanOrEqualTo(0);
@@ -75,7 +75,7 @@ public class LongestSuffixTests
     [Fact]
     public void PartialMatch()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 3, 4, 5 });
+        using var model = new NGramModel(new List<int> { 1, 2, 3, 4, 5 });
         var (_, length) = model.LongestSuffix(new List<int> { 99, 2, 3 });
         length.Should().Be(2);
     }
@@ -83,7 +83,7 @@ public class LongestSuffixTests
     [Fact]
     public void NoMatch()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 3 });
+        using var model = new NGramModel(new List<int> { 1, 2, 3 });
         var (position, length) = model.LongestSuffix(new List<int> { 99, 98, 97 });
         length.Should().Be(0);
         position.Should().Be(-1);
@@ -92,7 +92,7 @@ public class LongestSuffixTests
     [Fact]
     public void EmptyContext()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 3 });
+        using var model = new NGramModel(new List<int> { 1, 2, 3 });
         var (_, length) = model.LongestSuffix(new List<int>());
         length.Should().Be(0);
     }
@@ -100,7 +100,7 @@ public class LongestSuffixTests
     [Fact]
     public void RespectsMaxLength()
     {
-        using var model = new Infinigram(TestData.Range(1, 8), maxLength: 3);
+        using var model = new NGramModel(TestData.Range(1, 8), maxLength: 3);
         var (_, length) = model.LongestSuffix(TestData.Range(1, 8));
         length.Should().BeLessThanOrEqualTo(3);
     }
@@ -111,7 +111,7 @@ public class FindAllSuffixMatchesTests
     [Fact]
     public void Basic()
     {
-        using var model = new Infinigram(TestData.B("the cat sat on the mat").ToArray());
+        using var model = new NGramModel(TestData.B("the cat sat on the mat").ToArray());
         var matches = model.FindAllSuffixMatches(TestData.B("the cat"));
 
         matches.Should().NotBeEmpty();
@@ -127,7 +127,7 @@ public class FindAllSuffixMatchesTests
     [Fact]
     public void MultipleLengths()
     {
-        using var model = new Infinigram(TestData.B("abc abcd abcde").ToArray());
+        using var model = new NGramModel(TestData.B("abc abcd abcde").ToArray());
         var matches = model.FindAllSuffixMatches(TestData.B("abcde"));
         matches.Select(m => m.Length).Distinct().Should().HaveCountGreaterThan(1);
     }
@@ -136,7 +136,7 @@ public class FindAllSuffixMatchesTests
     public void PositionsAreValid()
     {
         var corpus = TestData.B("the cat sat. the cat ran.");
-        using var model = new Infinigram(corpus.ToArray());
+        using var model = new NGramModel(corpus.ToArray());
         var matches = model.FindAllSuffixMatches(TestData.B("the cat"));
 
         foreach (var (length, positions) in matches)
@@ -148,21 +148,21 @@ public class FindAllSuffixMatchesTests
     [Fact]
     public void NoMatch()
     {
-        using var model = new Infinigram(TestData.B("abc").ToArray());
+        using var model = new NGramModel(TestData.B("abc").ToArray());
         model.FindAllSuffixMatches(TestData.B("xyz")).Should().BeEmpty();
     }
 
     [Fact]
     public void EmptyContext()
     {
-        using var model = new Infinigram(TestData.B("abc").ToArray());
+        using var model = new NGramModel(TestData.B("abc").ToArray());
         model.FindAllSuffixMatches(new List<int>()).Should().BeEmpty();
     }
 
     [Fact]
     public void RespectsMaxLength()
     {
-        using var model = new Infinigram(TestData.B("abcdefgh").ToArray(), maxLength: 3);
+        using var model = new NGramModel(TestData.B("abcdefgh").ToArray(), maxLength: 3);
         var matches = model.FindAllSuffixMatches(TestData.B("abcdefgh"));
         if (matches.Count > 0)
         {
@@ -173,7 +173,7 @@ public class FindAllSuffixMatchesTests
     [Fact]
     public void MaxLengthOneClampsToSingleByte()
     {
-        using var model = new Infinigram(TestData.B("abcdefgh").ToArray(), maxLength: 1);
+        using var model = new NGramModel(TestData.B("abcdefgh").ToArray(), maxLength: 1);
         var matches = model.FindAllSuffixMatches(TestData.B("abcdefgh"));
         if (matches.Count > 0)
         {
@@ -184,7 +184,7 @@ public class FindAllSuffixMatchesTests
     [Fact]
     public void SingleByteCorpus()
     {
-        using var model = new Infinigram(TestData.B("a").ToArray());
+        using var model = new NGramModel(TestData.B("a").ToArray());
 
         var matchesA = model.FindAllSuffixMatches(TestData.B("a"));
         matchesA.Should().HaveCount(1);
@@ -197,7 +197,7 @@ public class FindAllSuffixMatchesTests
     [Fact]
     public void SingleByteContextInLongerCorpus()
     {
-        using var model = new Infinigram(TestData.B("abcabc").ToArray());
+        using var model = new NGramModel(TestData.B("abcabc").ToArray());
         var matches = model.FindAllSuffixMatches(TestData.B("a"));
         matches.Should().HaveCount(1);
         var (length, positions) = matches[0];
@@ -208,7 +208,7 @@ public class FindAllSuffixMatchesTests
     [Fact]
     public void ContextLongerThanCorpusFindsPartialMatches()
     {
-        using var model = new Infinigram(TestData.B("abc").ToArray());
+        using var model = new NGramModel(TestData.B("abc").ToArray());
         var matches = model.FindAllSuffixMatches(TestData.B("xyzabc"));
 
         matches.Should().HaveCount(3);
@@ -220,7 +220,7 @@ public class FindAllSuffixMatchesTests
     {
         var corpus = TestData.B("the cat sat on the mat");
         var context = TestData.B("the cat");
-        using var model = new Infinigram(corpus.ToArray());
+        using var model = new NGramModel(corpus.ToArray());
 
         var matches = model.FindAllSuffixMatches(context);
         foreach (var (length, positions) in matches)
@@ -237,7 +237,7 @@ public class FindAllSuffixMatchesTests
     public void PositionCountsMatchOccurrences()
     {
         var corpus = TestData.B("abab ab ab abab");
-        using var model = new Infinigram(corpus.ToArray());
+        using var model = new NGramModel(corpus.ToArray());
 
         var matches = model.FindAllSuffixMatches(TestData.B("ab"));
         matches.Should().HaveCount(2);
@@ -250,7 +250,7 @@ public class FindAllSuffixMatchesTests
     [Fact]
     public void TokenizedQueryMatchesBytesQuery()
     {
-        using var model = new Infinigram(TestData.B("the cat sat on the mat").ToArray());
+        using var model = new NGramModel(TestData.B("the cat sat on the mat").ToArray());
         var viaEncode = model.FindAllSuffixMatches(model.Tokenizer.Encode("the cat"));
         var viaBytes = model.FindAllSuffixMatches(TestData.B("the cat"));
         viaEncode.Should().HaveCount(viaBytes.Count);
@@ -264,7 +264,7 @@ public class FindAllSuffixMatchesTests
     [Fact]
     public void RepeatedPatternPositionsAreAllEven()
     {
-        using var model = new Infinigram(TestData.B(new string('a', 0) + string.Concat(Enumerable.Repeat("ab", 100))).ToArray());
+        using var model = new NGramModel(TestData.B(new string('a', 0) + string.Concat(Enumerable.Repeat("ab", 100))).ToArray());
         var matches = model.FindAllSuffixMatches(TestData.B("ab"));
 
         var length2 = matches.Single(m => m.Length == 2);
@@ -275,7 +275,7 @@ public class FindAllSuffixMatchesTests
     [Fact]
     public void OverlappingMatchesFound()
     {
-        using var model = new Infinigram(TestData.B("aaaa").ToArray());
+        using var model = new NGramModel(TestData.B("aaaa").ToArray());
         var matches = model.FindAllSuffixMatches(TestData.B("aa"));
 
         var length2 = matches.Single(m => m.Length == 2);
@@ -285,7 +285,7 @@ public class FindAllSuffixMatchesTests
     [Fact]
     public void OverlappingLongerPatternFound()
     {
-        using var model = new Infinigram(TestData.B("aaaaa").ToArray());
+        using var model = new NGramModel(TestData.B("aaaaa").ToArray());
         var matches = model.FindAllSuffixMatches(TestData.B("aaa"));
 
         var length3 = matches.Single(m => m.Length == 3);
@@ -295,7 +295,7 @@ public class FindAllSuffixMatchesTests
     [Fact]
     public void AllLengthsFound()
     {
-        using var model = new Infinigram(TestData.B("abcdefg").ToArray());
+        using var model = new NGramModel(TestData.B("abcdefg").ToArray());
         var matches = model.FindAllSuffixMatches(TestData.B("defg"));
         matches.Select(m => m.Length).Should().Equal(new[] { 4, 3, 2, 1 });
     }
@@ -303,7 +303,7 @@ public class FindAllSuffixMatchesTests
     [Fact]
     public void PartialSuffixOnly()
     {
-        using var model = new Infinigram(TestData.B("xyz").ToArray());
+        using var model = new NGramModel(TestData.B("xyz").ToArray());
         var matches = model.FindAllSuffixMatches(TestData.B("abc xyz"));
 
         matches.Should().NotBeEmpty();
@@ -313,7 +313,7 @@ public class FindAllSuffixMatchesTests
     [Fact]
     public void UnicodeAfterEncode()
     {
-        using var model = new Infinigram(TestData.B("hello world").ToArray());
+        using var model = new NGramModel(TestData.B("hello world").ToArray());
         var matches = model.FindAllSuffixMatches(model.Tokenizer.Encode("hello"));
         matches.Should().NotBeEmpty();
         matches.Max(m => m.Length).Should().Be(5);
@@ -322,7 +322,7 @@ public class FindAllSuffixMatchesTests
     [Fact]
     public void SpecialBytes()
     {
-        using var model = new Infinigram(new List<int> { 0, 1, 255, 254, 0, 1 });
+        using var model = new NGramModel(new List<int> { 0, 1, 255, 254, 0, 1 });
         var matches = model.FindAllSuffixMatches(new List<int> { 0, 1 });
 
         matches.Should().NotBeEmpty();
@@ -335,7 +335,7 @@ public class FindAllSuffixMatchesTests
     {
         var corpus = TestData.B("ab cd ef");
         var context = TestData.B("ab");
-        using var model = new Infinigram(corpus.ToArray());
+        using var model = new NGramModel(corpus.ToArray());
 
         var matches = model.FindAllSuffixMatches(context);
         foreach (var (length, positions) in matches)
@@ -348,7 +348,7 @@ public class FindAllSuffixMatchesTests
     [Fact]
     public void PositionsAreLists()
     {
-        using var model = new Infinigram(TestData.B("test test test").ToArray());
+        using var model = new NGramModel(TestData.B("test test test").ToArray());
         var matches = model.FindAllSuffixMatches(TestData.B("test"));
         foreach (var (_, positions) in matches)
         {
@@ -360,7 +360,7 @@ public class FindAllSuffixMatchesTests
     [Fact]
     public void NewlinesInCorpus()
     {
-        using var model = new Infinigram(TestData.B("line1\nline2\nline1").ToArray());
+        using var model = new NGramModel(TestData.B("line1\nline2\nline1").ToArray());
         var matches = model.FindAllSuffixMatches(TestData.B("line1"));
 
         matches.Should().NotBeEmpty();
@@ -387,7 +387,7 @@ public class ContinuationsTests
     [Fact]
     public void ContinuationsBasic()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 3, 1, 2, 4, 1, 2, 5 });
+        using var model = new NGramModel(new List<int> { 1, 2, 3, 1, 2, 4, 1, 2, 5 });
         var conts = model.Continuations(new List<int> { 1, 2 });
 
         conts.Should().NotBeNull();
@@ -402,7 +402,7 @@ public class ContinuationsTests
     [Fact]
     public void EmptyContextReturnsUniform()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 1, 3, 1 });
+        using var model = new NGramModel(new List<int> { 1, 2, 1, 3, 1 });
         var conts = model.Continuations(new List<int>());
 
         conts.Should().NotBeNull();
@@ -413,14 +413,14 @@ public class ContinuationsTests
     [Fact]
     public void NoMatchReturnsNull()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 3 });
+        using var model = new NGramModel(new List<int> { 1, 2, 3 });
         model.Continuations(new List<int> { 99, 98, 97 }).Should().BeNull();
     }
 
     [Fact]
     public void MatchOnlyAtEndOfCorpusFallsBack()
     {
-        using var model = new Infinigram(new List<int> { 1, 2, 3, 4, 5 });
+        using var model = new NGramModel(new List<int> { 1, 2, 3, 4, 5 });
         var conts = model.Continuations(new List<int> { 4, 5 });
         (conts is null || conts.Count > 0).Should().BeTrue();
     }
@@ -428,7 +428,7 @@ public class ContinuationsTests
     [Fact]
     public void LimitCapsSampleCount()
     {
-        using var model = new Infinigram(TestData.B(new string('x', 0) + string.Concat(Enumerable.Repeat("ab", 500))).ToArray());
+        using var model = new NGramModel(TestData.B(new string('x', 0) + string.Concat(Enumerable.Repeat("ab", 500))).ToArray());
 
         var full = model.Continuations(TestData.B("a"), limit: null);
         var limited = model.Continuations(TestData.B("a"), limit: 100);
@@ -441,16 +441,16 @@ public class ContinuationsTests
     [Fact]
     public void DefaultLimitIsApplied()
     {
-        using var model = new Infinigram(TestData.B(string.Concat(Enumerable.Repeat("ab", 20000))).ToArray());
+        using var model = new NGramModel(TestData.B(string.Concat(Enumerable.Repeat("ab", 20000))).ToArray());
         var conts = model.Continuations(TestData.B("a"));
         conts.Should().NotBeNull();
-        conts!.Values.Sum().Should().BeLessThanOrEqualTo(Infinigram.DefaultContinuationLimit);
+        conts!.Values.Sum().Should().BeLessThanOrEqualTo(NGramModel.DefaultContinuationLimit);
     }
 
     [Fact]
     public void ExplicitLimitRespected()
     {
-        using var model = new Infinigram(TestData.B(string.Concat(Enumerable.Repeat("ab", 1000))).ToArray());
+        using var model = new NGramModel(TestData.B(string.Concat(Enumerable.Repeat("ab", 1000))).ToArray());
         var conts = model.Continuations(TestData.B("a"), limit: 10);
         conts![98].Should().BeLessThanOrEqualTo(10);
     }
@@ -458,7 +458,7 @@ public class ContinuationsTests
     [Fact]
     public void LimitNoneUsesAllOccurrences()
     {
-        using var model = new Infinigram(TestData.B(string.Concat(Enumerable.Repeat("ab", 100))).ToArray());
+        using var model = new NGramModel(TestData.B(string.Concat(Enumerable.Repeat("ab", 100))).ToArray());
         var conts = model.Continuations(TestData.B("a"), limit: null);
         conts![98].Should().Be(100);
     }
@@ -466,7 +466,7 @@ public class ContinuationsTests
     [Fact]
     public void ContinuationsAreCached()
     {
-        using var model = new Infinigram(TestData.B("the cat sat on the mat the cat ran").ToArray());
+        using var model = new NGramModel(TestData.B("the cat sat on the mat the cat ran").ToArray());
         var context = TestData.B("the cat");
 
         var first = model.Continuations(context);
@@ -481,7 +481,7 @@ public class ContinuationsTests
     [Fact]
     public void CachedResultsAreCopies()
     {
-        using var model = new Infinigram(TestData.B("abcabd").ToArray());
+        using var model = new NGramModel(TestData.B("abcabd").ToArray());
         var context = TestData.B("ab");
 
         var first = model.Continuations(context);
@@ -494,7 +494,7 @@ public class ContinuationsTests
     [Fact]
     public void CacheClearedAfterUpdate()
     {
-        using var model = new Infinigram(TestData.B("abc").ToArray());
+        using var model = new NGramModel(TestData.B("abc").ToArray());
         model.Continuations(TestData.B("ab"));
         model.ContinuationsCacheCount.Should().BeGreaterThan(0);
 
@@ -505,7 +505,7 @@ public class ContinuationsTests
     [Fact]
     public void CacheReflectsUpdatedCorpus()
     {
-        using var model = new Infinigram(TestData.B("ab ab ab").ToArray());
+        using var model = new NGramModel(TestData.B("ab ab ab").ToArray());
         var context = TestData.B("ab");
         model.Continuations(context);
 
@@ -519,7 +519,7 @@ public class ContinuationsTests
     [Fact]
     public void ClearCacheEmptiesCache()
     {
-        using var model = new Infinigram(TestData.B("the cat sat on the mat").ToArray());
+        using var model = new NGramModel(TestData.B("the cat sat on the mat").ToArray());
         model.Continuations(TestData.B("the"));
         model.Continuations(TestData.B("cat"));
         model.Continuations(TestData.B("sat"));
@@ -532,7 +532,7 @@ public class ContinuationsTests
     [Fact]
     public void CacheEvictionStaysBounded()
     {
-        using var model = new Infinigram(Enumerable.Range(0, 256).SelectMany(v => Enumerable.Repeat(v, 10)).ToList());
+        using var model = new NGramModel(Enumerable.Range(0, 256).SelectMany(v => Enumerable.Repeat(v, 10)).ToList());
         model.ContinuationsCacheCapacity = 10;
 
         for (int i = 0; i < 25; i++)
@@ -546,7 +546,7 @@ public class ContinuationsTests
     [Fact]
     public void CacheEvictionKeepsResultsCorrect()
     {
-        using var model = new Infinigram(TestData.B(string.Concat(Enumerable.Repeat("abcdefghijklmnopqrstuvwxyz", 5))).ToArray());
+        using var model = new NGramModel(TestData.B(string.Concat(Enumerable.Repeat("abcdefghijklmnopqrstuvwxyz", 5))).ToArray());
         model.ContinuationsCacheCapacity = 5;
 
         for (int i = 0; i < 20; i++)
@@ -562,7 +562,7 @@ public class ContinuationsTests
     [Fact]
     public void DifferentLimitsAreSeparateCacheEntries()
     {
-        using var model = new Infinigram(TestData.B(string.Concat(Enumerable.Repeat("ab", 500))).ToArray());
+        using var model = new NGramModel(TestData.B(string.Concat(Enumerable.Repeat("ab", 500))).ToArray());
         model.Continuations(TestData.B("a"), limit: 10);
         model.Continuations(TestData.B("a"), limit: 100);
 
@@ -572,7 +572,7 @@ public class ContinuationsTests
     [Fact]
     public void OodContextsAreCachedAsMisses()
     {
-        using var model = new Infinigram(TestData.B("abc").ToArray());
+        using var model = new NGramModel(TestData.B("abc").ToArray());
         model.Continuations(new List<int> { 0xFF, 0xFE, 0xFD });
         model.Continuations(new List<int> { 0xFA, 0xFB, 0xFC });
 
@@ -584,7 +584,7 @@ public class ContinuationsTests
     public void ContinuationCountsMatchManualLoop()
     {
         var corpus = TestData.B("the cat sat on the mat the cat ran on the dog");
-        using var model = new Infinigram(corpus.ToArray());
+        using var model = new NGramModel(corpus.ToArray());
 
         var context = TestData.B("the");
         var modelConts = model.Continuations(context, limit: null);
@@ -610,7 +610,7 @@ public class ContinuationsTests
     public void ContinuationCountsMatchManualLoopDiverseCorpus()
     {
         var corpus = TestData.B("ab1 ab2 ab3 ab4 ab5 cd1 cd2 ef1");
-        using var model = new Infinigram(corpus.ToArray());
+        using var model = new NGramModel(corpus.ToArray());
 
         foreach (var ctx in new[] { "ab", "cd", "ef" })
         {
@@ -645,7 +645,7 @@ public class ContinuationsTests
             corpusParts.AddRange(new[] { 253, 254, b, 0 });
         }
 
-        using var model = new Infinigram(corpusParts);
+        using var model = new NGramModel(corpusParts);
         var conts = model.Continuations(pattern, limit: null);
 
         conts.Should().NotBeNull();
@@ -659,7 +659,7 @@ public class ContinuationsTests
     [Fact]
     public void SingleOccurrenceHasCountOne()
     {
-        using var model = new Infinigram(TestData.B("unique_pattern_xyz").ToArray());
+        using var model = new NGramModel(TestData.B("unique_pattern_xyz").ToArray());
         var conts = model.Continuations(TestData.B("unique_pattern_xy"));
 
         conts![(int)'z'].Should().Be(1);
@@ -669,7 +669,7 @@ public class ContinuationsTests
     [Fact]
     public void AllMatchesAtEndStillReturnsDictionary()
     {
-        using var model = new Infinigram(TestData.B("xyzxyz").ToArray());
+        using var model = new NGramModel(TestData.B("xyzxyz").ToArray());
         var conts = model.Continuations(TestData.B("xyz"));
 
         conts.Should().NotBeNull();
@@ -680,7 +680,7 @@ public class ContinuationsTests
     public void CountMatchesKnownValues()
     {
         var corpus = TestData.B("abc abc abc");
-        using var model = new Infinigram(corpus.ToArray());
+        using var model = new NGramModel(corpus.ToArray());
 
         var conts = model.Continuations(TestData.B("ab"));
         conts![(int)'c'].Should().Be(3);

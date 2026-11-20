@@ -1,8 +1,8 @@
 namespace Infinigram;
 
-internal static class InfinigramScorer
+internal static class SequenceScorer
 {
-    internal static double Score(Infinigram model, IReadOnlyList<int> sequence, double smoothing = 1e-10)
+    internal static double Score(NGramModel model, IReadOnlyList<int> sequence, double smoothing = 1e-10)
     {
         ArgumentNullException.ThrowIfNull(sequence);
         if (sequence.Count == 0)

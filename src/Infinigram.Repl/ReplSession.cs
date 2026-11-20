@@ -1,5 +1,5 @@
 using System.Text;
-using Model = Infinigram.Infinigram;
+using Model = Infinigram.NGramModel;
 
 namespace Infinigram.Repl;
 

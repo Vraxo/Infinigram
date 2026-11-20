@@ -27,7 +27,7 @@ internal sealed class ContinuationCounter
             return cached is null ? null : new Dictionary<int, int>(cached);
         }
 
-        var (matchLength, _) = InfinigramSuffixMatcher.LongestMatchLength(suffixArray, ctx);
+        var (matchLength, _) = SuffixMatcher.LongestMatchLength(suffixArray, ctx);
         if (matchLength == 0)
         {
             _cache.Set(cacheKey, null);
@@ -36,7 +36,7 @@ internal sealed class ContinuationCounter
 
         for (int length = matchLength; length > 0; length--)
         {
-            var positions = InfinigramSuffixMatcher.SearchSuffix(suffixArray, ctx, length, limit);
+            var positions = SuffixMatcher.SearchSuffix(suffixArray, ctx, length, limit);
             Dictionary<int, int>? counts = null;
             foreach (int pos in positions)
             {

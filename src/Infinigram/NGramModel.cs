@@ -1,6 +1,6 @@
 namespace Infinigram;
 
-public sealed partial class Infinigram : IDisposable
+public sealed partial class NGramModel : IDisposable
 {
     public const int DefaultContinuationLimit = 10000;
 
@@ -20,14 +20,14 @@ public sealed partial class Infinigram : IDisposable
     public string? ModelPath => _modelDir;
 
 
-    private Infinigram(ITokenizer tokenizer, int? maxLength)
+    private NGramModel(ITokenizer tokenizer, int? maxLength)
     {
         Tokenizer = tokenizer;
         VocabSize = tokenizer.VocabSize;
         MaxLength = maxLength;
     }
 
-    public Infinigram(IReadOnlyList<int> corpus, ITokenizer? tokenizer = null, int? maxLength = null)
+    public NGramModel(IReadOnlyList<int> corpus, ITokenizer? tokenizer = null, int? maxLength = null)
         : this(tokenizer ?? new ByteTokenizer(), maxLength)
     {
         ArgumentNullException.ThrowIfNull(corpus);
@@ -38,7 +38,7 @@ public sealed partial class Infinigram : IDisposable
         _sa = new SuffixArray(ValidateCorpus(corpus, "Corpus"));
     }
 
-    public Infinigram(byte[] corpus, ITokenizer? tokenizer = null, int? maxLength = null)
+    public NGramModel(byte[] corpus, ITokenizer? tokenizer = null, int? maxLength = null)
         : this(tokenizer ?? new ByteTokenizer(), maxLength)
     {
         ArgumentNullException.ThrowIfNull(corpus);
@@ -56,7 +56,7 @@ public sealed partial class Infinigram : IDisposable
         _sa = new SuffixArray(ValidateCorpus(corpus.Select(b => (int)b).ToList(), "Corpus"));
     }
 
-    public Infinigram(string corpus, ITokenizer? tokenizer = null, int? maxLength = null)
+    public NGramModel(string corpus, ITokenizer? tokenizer = null, int? maxLength = null)
         : this(tokenizer ?? new ByteTokenizer(), maxLength)
     {
         ArgumentNullException.ThrowIfNull(corpus);
@@ -132,7 +132,7 @@ public sealed partial class Infinigram : IDisposable
         }
 
         var ctx = ApplyMaxLength(context);
-        var (length, position) = InfinigramSuffixMatcher.LongestMatchLength(_sa, ctx);
+        var (length, position) = SuffixMatcher.LongestMatchLength(_sa, ctx);
         return length == 0 ? (-1, 0) : (position, length);
     }
 
@@ -149,7 +149,7 @@ public sealed partial class Infinigram : IDisposable
         var matches = new List<(int Length, List<int> Positions)>();
         for (int length = ctx.Count; length > 0; length--)
         {
-            var positions = InfinigramSuffixMatcher.SearchSuffix(_sa, ctx, length, limit: null);
+            var positions = SuffixMatcher.SearchSuffix(_sa, ctx, length, limit: null);
             if (positions.Count > 0)
             {
                 matches.Add((length, positions));
@@ -178,31 +178,31 @@ public sealed partial class Infinigram : IDisposable
     public IReadOnlyDictionary<int, double>? Predict(IReadOnlyList<int> context, int topK = 50, double smoothing = 0.0)
     {
         ThrowIfDisposed();
-        return InfinigramPredictor.Predict(this, context, topK, smoothing);
+        return TokenPredictor.Predict(this, context, topK, smoothing);
     }
 
     public IReadOnlyDictionary<int, double>? PredictLogprobs(IReadOnlyList<int> context, int topK = 50,
-        double smoothing = 1e-10) => InfinigramPredictor.PredictLogprobs(this, context, topK, smoothing);
+        double smoothing = 1e-10) => TokenPredictor.PredictLogprobs(this, context, topK, smoothing);
 
     public List<int> Generate(IReadOnlyList<int>? context = null, int maxTokens = 100,
         double temperature = 1.0, int? topK = null, double smoothing = 0.0,
         IEnumerable<IReadOnlyList<int>>? stop = null, Random? rng = null)
     {
         ThrowIfDisposed();
-        return InfinigramGenerator.Generate(this, context, maxTokens, temperature, topK, smoothing, stop, rng);
+        return TextGenerator.Generate(this, context, maxTokens, temperature, topK, smoothing, stop, rng);
     }
 
     public string GenerateText(string context = "", int maxTokens = 100, double temperature = 1.0,
         int? topK = 50, double smoothing = 0.0, IEnumerable<string>? stop = null, Random? rng = null)
     {
         ThrowIfDisposed();
-        return InfinigramGenerator.GenerateText(this, context, maxTokens, temperature, topK, smoothing, stop, rng);
+        return TextGenerator.GenerateText(this, context, maxTokens, temperature, topK, smoothing, stop, rng);
     }
 
     public double Score(IReadOnlyList<int> sequence, double smoothing = 1e-10)
     {
         ThrowIfDisposed();
-        return InfinigramScorer.Score(this, sequence, smoothing);
+        return SequenceScorer.Score(this, sequence, smoothing);
     }
 
     public void Update(IReadOnlyList<int> newTokens)
@@ -243,7 +243,7 @@ public sealed partial class Infinigram : IDisposable
 
         if (_modelDir is not null)
         {
-            InfinigramStorage.Save(_modelDir, _sa, Tokenizer, VocabSize, MaxLength);
+            ModelStorage.Save(_modelDir, _sa, Tokenizer, VocabSize, MaxLength);
         }
         ClearCache();
     }
@@ -275,14 +275,14 @@ public sealed partial class Infinigram : IDisposable
 
     public override string ToString() =>
         ModelPath is null
-            ? $"Infinigram(n={N:N0}, vocab={VocabSize})"
-            : $"Infinigram(n={N:N0}, vocab={VocabSize}, path={ModelPath})";
+            ? $"NGramModel(n={N:N0}, vocab={VocabSize})"
+            : $"NGramModel(n={N:N0}, vocab={VocabSize}, path={ModelPath})";
 
     private void ThrowIfDisposed()
     {
         if (_disposed)
         {
-            throw new ObjectDisposedException(nameof(Infinigram));
+            throw new ObjectDisposedException(nameof(NGramModel));
         }
     }
 }

@@ -2,10 +2,10 @@ using System.Runtime.InteropServices;
 
 namespace Infinigram;
 
-internal static class InfinigramGenerator
+internal static class TextGenerator
 {
     internal static List<int> Generate(
-        Infinigram model,
+        NGramModel model,
         IReadOnlyList<int>? context = null,
         int maxTokens = 100,
         double temperature = 1.0,
@@ -55,7 +55,7 @@ internal static class InfinigramGenerator
     }
 
     internal static string GenerateText(
-        Infinigram model,
+        NGramModel model,
         string context = "",
         int maxTokens = 100,
         double temperature = 1.0,

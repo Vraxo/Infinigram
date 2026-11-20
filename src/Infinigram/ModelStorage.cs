@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 
 namespace Infinigram;
 
-internal static class InfinigramStorage
+internal static class ModelStorage
 {
     private static string DefaultModelsDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -35,14 +35,14 @@ internal static class InfinigramStorage
         if (!Directory.Exists(dir))
         {
             throw new FileNotFoundException(
-                $"Model not found at {dir}. Use Infinigram.Build(...) to create a new model.");
+                $"Model not found at {dir}. Use NGramModel.Build(...) to create a new model.");
         }
 
         string metaPath = Path.Combine(dir, "meta.json");
         if (!File.Exists(metaPath))
         {
             throw new FileNotFoundException(
-                $"Model not found at {dir} (missing meta.json). Use Infinigram.Build(...) to create a new model.");
+                $"Model not found at {dir} (missing meta.json). Use NGramModel.Build(...) to create a new model.");
         }
 
         JsonObject meta;
@@ -64,7 +64,7 @@ internal static class InfinigramStorage
             throw new NotSupportedException(
                 $"Unsupported model format version {version} at {metaPath}. This engine reads C#-built " +
                 "indexes (version 1). If this is a Python-built model (.npy files, version 2), it is " +
-                "not supported yet — rebuild it with Infinigram.Build.");
+                "not supported yet — rebuild it with NGramModel.Build.");
         }
 
         ITokenizer resolved = ResolveTokenizer(meta, metaPath, tokenizer);
