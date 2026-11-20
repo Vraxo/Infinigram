@@ -33,6 +33,9 @@ dotnet build
 dotnet test        # runs tests/Infinigram.Tests (xUnit v3 on Microsoft.Testing.Platform)
 ```
 
+CI (GitHub Actions, `.github/workflows/ci.yml`) builds and tests on every push
+to `main` and every PR targeting `main`.
+
 The repo-root `global.json` selects the MTP runner for `dotnet test` (required
 on .NET 10+ SDKs; the old VSTest bridge is gone). Without it, run the test app
 directly: `dotnet run --project tests/Infinigram.Tests`.
