@@ -1,3 +1,3 @@
 using Infinigram.Repl;
 
-return new ReplSession(Console.In, Console.Out, Console.Error).Run(args);
+return ReplSession.Run(Console.In, Console.Out, Console.Error, "corpus.txt");
