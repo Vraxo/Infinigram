@@ -14,6 +14,7 @@ src/Infinigram/
   Infinigram.csproj                 # net11.0 class library
   Infinigram.cs                     # Model: predict / continuations / generate / score / I/O
   SuffixArray.cs                    # Suffix-array queries and public API
+  SuffixArraySearch.cs              # Suffix-array search and counting
   SuffixArrayBuilder.cs             # Suffix-array construction
   SuffixArrayStorage.cs             # Binary index persistence
   LruCache.cs                       # Internal LRU cache

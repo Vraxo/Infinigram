@@ -72,6 +72,26 @@ public class SuffixArrayBuildTests
 public class SuffixArraySearchTests
 {
     [Fact]
+    public void SearchAndCountMatchDirectScanAndPreserveSuffixOrder()
+    {
+        var corpus = new[] { 2, 1, 2, 1, 2, 1, 3 };
+        var sa = new SuffixArray(corpus);
+        var patterns = new[] { new[] { 1 }, new[] { 2, 1 }, new[] { 1, 3 }, new[] { 3, 4 }, Array.Empty<int>() };
+
+        foreach (var pattern in patterns)
+        {
+            var expected = sa.Positions
+                .Where(position => pattern.Length > 0 && position + pattern.Length <= corpus.Length &&
+                    corpus.Skip(position).Take(pattern.Length).SequenceEqual(pattern))
+                .ToArray();
+
+            sa.Search(pattern).Should().Equal(expected);
+            sa.Count(pattern).Should().Be(expected.Length);
+            sa.Search(pattern, limit: 1).Should().Equal(expected.Take(1));
+        }
+    }
+
+    [Fact]
     public void SearchSimple()
     {
         var sa = new SuffixArray(TestData.B("the cat sat on the mat"));
