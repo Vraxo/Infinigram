@@ -30,6 +30,8 @@ src/Infinigram/
   ByteTokenizer.cs                  # UTF-8 byte tokenizer
   Sampling.cs                       # Temperature sampling, top-k / top-p filters
   CorpusUtils.cs                    # Document/JSONL corpus builders
+  TextNormalizer.cs                 # Optional text cleanup
+  TextNormalizationOptions.cs       # Cleanup options
 src/Infinigram.Repl/
   Infinigram.Repl.csproj            # Interactive console application
   ReplSession.cs                    # Interactive generation loop
@@ -69,6 +71,34 @@ The REPL loads the file once at startup. Each line you enter is a prompt; it
 prints a greedy continuation of up to 80 UTF-8 bytes. End input with Ctrl+D
 (or Ctrl+Z then Enter on Windows) to exit. Indexing large files can take time
 and memory.
+
+Normalization is off by default. To enable it for both the file and every prompt,
+change the `normalization` variable in `src/Infinigram.Repl/Program.cs` to:
+
+```csharp
+TextNormalizationOptions? normalization = new() { Lowercase = true };
+```
+
+The default options convert text to Unicode NFC and line endings to LF; lowercase
+is optional and culture-invariant. `CollapseWhitespace = true` additionally
+replaces each run of Unicode whitespace (including newlines) with one space,
+without trimming leading or trailing whitespace. Normalized REPL loading reads
+text instead of raw bytes, recognizes a byte-order mark, and rejects invalid UTF-8
+when UTF-8 is used. Generation returns normalized text.
+
+For library users, normalization is explicit, not applied by the model or saved
+in model metadata. Use the same options on corpus text and every query before
+tokenizing, including after loading a persisted model:
+
+```csharp
+var options = new TextNormalizationOptions { Lowercase = true };
+using var model = new Infinigram(TextNormalizer.Normalize(corpus, options));
+var query = model.Tokenizer.Encode(TextNormalizer.Normalize(input, options));
+var matches = model.Search(query);
+```
+
+Normalization can change byte offsets, whitespace, casing, and exact-match results.
+Do not apply it to arbitrary binary corpora.
 
 ## Quick example
 
