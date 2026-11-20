@@ -24,7 +24,7 @@ src/Infinigram/
   CorpusUtils.cs                    # Document/JSONL corpus builders
 src/Infinigram.Repl/
   Infinigram.Repl.csproj            # Interactive console application
-  ReplSession.cs                    # REPL commands
+  ReplSession.cs                    # Interactive generation loop
 tests/Infinigram.Tests/
   Infinigram.Tests.csproj           # net11.0 test app (xUnit v3 on Microsoft.Testing.Platform)
   *Tests.cs                         # Port of Python/tests/ (assertions via AwesomeAssertions)
@@ -50,21 +50,17 @@ directly: `dotnet run --project tests/Infinigram.Tests`.
 
 ## Interactive REPL
 
-Run the .NET REPL with a UTF-8 corpus file or a previously saved .NET model:
+Place a nonempty UTF-8 text file named `corpus.txt` in the current working
+directory, then run:
 
 ```bash
-dotnet run --project src/Infinigram.Repl -- --file path/to/corpus.txt
-dotnet run --project src/Infinigram.Repl -- --model path/to/model
+dotnet run --project src/Infinigram.Repl
 ```
 
-You can also start without arguments and use `:text hello world`, `:open path/to/corpus.txt`,
-or `:load path/to/model`. Type `:help` for all commands. For example, `:count hello`,
-`:search hello`, and `:predict hello` query the corpus; `:generate hello` (or a plain
-line) generates a greedy continuation of up to 80 UTF-8 bytes. `:quit` or EOF exits.
-`:open` and `--file` read raw file bytes; search offsets and prediction IDs are bytes,
-not characters. Building an index can take time and memory for large files. The REPL
-loads existing .NET models but does not currently save new ones; use the library's
-`Build` or `BuildFromFile` API for persistence.
+The REPL loads the file once at startup. Each line you enter is a prompt; it
+prints a greedy continuation of up to 80 UTF-8 bytes. End input with Ctrl+D
+(or Ctrl+Z then Enter on Windows) to exit. Indexing large files can take time
+and memory.
 
 ## Quick example
 
