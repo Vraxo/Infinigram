@@ -395,6 +395,16 @@ public class GenerateTests
     }
 
     [Fact]
+    public void MultiTokenStopStripsOnlyMatchedSuffix()
+    {
+        using var model = new Infinigram(string.Concat(Enumerable.Repeat("abcdef", 10)));
+        var result = model.Generate(TestData.B("a"), maxTokens: 10, temperature: 0,
+            stop: new List<IReadOnlyList<int>> { TestData.B("cz"), TestData.B("cd") });
+
+        result.Should().Equal(TestData.B("b"));
+    }
+
+    [Fact]
     public void TakesTokenizedInput()
     {
         using var model = new Infinigram(TestData.B(string.Concat(Enumerable.Repeat("the quick brown fox ", 50))).ToArray());
