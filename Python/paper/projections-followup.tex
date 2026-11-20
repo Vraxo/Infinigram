@@ -1,0 +1,298 @@
+\documentclass[11pt]{article}
+
+% Standard packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage[margin=1in]{geometry}
+\usepackage{natbib}
+
+% Title and authors
+\title{Projections as Inductive Biases for Corpus-Based Language Models}
+
+\author{
+  Draft for Future Development
+}
+
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\textbf{[PLACEHOLDER]} This paper explores how projection functions---transformations applied to queries or data---can serve as inductive biases in corpus-based language models. We present a unified framework where query projections ($\pi_Q$) and data projections ($\pi_D$) provide complementary mechanisms for improving generalization beyond exact string matching. We analyze the duality between runtime query transforms and corpus augmentation, discussing trade-offs in terms of storage, latency, and semantic coverage. This framework extends corpus-based models like Infinigram to handle case-insensitive matching, whitespace normalization, and other practical variations without modifying the core suffix array machinery.
+
+\vspace{1em}
+\noindent\textit{Note: This content was extracted from the Infinigram paper for separate development. See the main Infinigram paper for the core suffix array language modeling approach.}
+\end{abstract}
+
+\section{Introduction}
+
+Corpus-based language models using suffix arrays \citep{manber1993suffix} provide exact pattern matching with $O(m \log n)$ query complexity. However, exact matching can be overly rigid: the query ``The Cat'' will not match corpus occurrences of ``the cat'' despite semantic equivalence for many applications.
+
+This paper presents a \emph{projection framework} that addresses this limitation through controlled relaxation of exact matching. The key insight is that both query-time transformations and data augmentation can be viewed as \emph{projections} that map strings into equivalence classes. These projections function as \emph{inductive biases}---prior assumptions that improve generalization by treating syntactically different strings as semantically equivalent.
+
+\subsection{Contributions}
+
+Our contributions are:
+
+\begin{enumerate}
+    \item A unified \textbf{projection framework} with query projections ($\pi_Q$) and data projections ($\pi_D$) that formalize the relationship between runtime transforms and corpus augmentation.
+
+    \item Analysis of \textbf{runtime query transforms} including case normalization, whitespace handling, and Unicode normalization.
+
+    \item A formalization of \textbf{corpus augmentation as data projection}, showing how augmented corpora implement the same semantic relaxations with different trade-offs.
+
+    \item A \textbf{duality theorem} establishing when query transforms and corpus augmentation produce equivalent results, and when they diverge.
+
+    \item Discussion of \textbf{future directions} including semantic clustering, lemmatization, and embedding-based soft matching.
+\end{enumerate}
+
+\section{The Projection Framework}
+
+We formalize projections as functions that map strings to equivalence classes, enabling matches between syntactically different but semantically equivalent strings.
+
+\subsection{Query Projections}
+
+A \textbf{query projection} $\pi_Q: \Sigma^* \to \Sigma^*$ transforms the query before matching against the corpus. Given a query $q$ and corpus $D$, we search for:
+\begin{equation}
+\text{matches}(\pi_Q(q), D) = \{p \in D : \pi_Q(q) \sqsubseteq D[p:]\}
+\end{equation}
+where $\sqsubseteq$ denotes prefix matching.
+
+\textbf{Example.} With $\pi_Q = \texttt{lowercase}$, the query ``Hello World'' becomes ``hello world'', matching lowercase occurrences in the corpus.
+
+\subsection{Data Projections}
+
+A \textbf{data projection} $\pi_D: \Sigma^* \to \Sigma^*$ transforms the corpus at index time. Given query $q$ and projected corpus $\pi_D(D)$:
+\begin{equation}
+\text{matches}(q, \pi_D(D)) = \{p \in \pi_D(D) : q \sqsubseteq \pi_D(D)[p:]\}
+\end{equation}
+
+\textbf{Example.} With $\pi_D = \texttt{lowercase}$, the corpus ``Hello World'' is indexed as ``hello world'', matching lowercase queries.
+
+\subsection{Symmetric Projections}
+
+When $\pi_Q = \pi_D = \pi$, we have a \textbf{symmetric projection}:
+\begin{equation}
+\text{matches}(\pi(q), \pi(D))
+\end{equation}
+
+Symmetric projections define equivalence classes: strings $s_1$ and $s_2$ are equivalent iff $\pi(s_1) = \pi(s_2)$. This is the natural formulation for case-insensitive matching, where both query and corpus are lowercased.
+
+\section{Runtime Query Transforms}
+
+Infinigram supports several runtime query transforms that implement query projections without modifying the indexed corpus.
+
+\subsection{Available Transforms}
+
+\begin{description}
+    \item[\texttt{lowercase}] Maps all characters to lowercase: ``Hello'' $\to$ ``hello''
+
+    \item[\texttt{casefold}] Unicode-aware case folding for international text: ``Stra{\ss}e'' $\to$ ``strasse''
+
+    \item[\texttt{strip}] Removes leading/trailing whitespace: ``\ hello\ '' $\to$ ``hello''
+
+    \item[\texttt{normalize\_whitespace}] Collapses runs of whitespace to single spaces: ``hello\ \ \ world'' $\to$ ``hello world''
+\end{description}
+
+\subsection{Transform Composition}
+
+Transforms can be composed: $\pi = \pi_2 \circ \pi_1$ applies $\pi_1$ first, then $\pi_2$. Common compositions include:
+
+\begin{itemize}
+    \item \texttt{strip $\circ$ lowercase}: Normalize case and remove edge whitespace
+    \item \texttt{normalize\_whitespace $\circ$ lowercase}: Full text normalization
+\end{itemize}
+
+The order of composition matters in general, though many common transforms commute.
+
+\subsection{Implementation}
+
+Query transforms are applied in the \texttt{predict} method:
+
+\begin{algorithmic}[1]
+\Function{PredictWithTransform}{$q$, $\pi_Q$}
+    \State $q' \gets \pi_Q(q)$
+    \State \Return \Call{Predict}{$q'$}
+\EndFunction
+\end{algorithmic}
+
+This adds negligible overhead since $\pi_Q$ operates only on the query (typically $<$100 bytes), not the corpus.
+
+\section{Corpus Augmentation as Data Projection}
+
+An alternative to query transforms is \textbf{corpus augmentation}: including transformed versions of documents in the index. This implements data projections.
+
+\subsection{Augmentation Formula}
+
+Given corpus $D = \{d_1, d_2, \ldots, d_n\}$ and augmentation functions $\{a_1, a_2, \ldots, a_k\}$, the augmented corpus is:
+\begin{equation}
+D' = D \cup \bigcup_{i=1}^{n} \bigcup_{j=1}^{k} \{a_j(d_i)\}
+\end{equation}
+
+Each document $d_i$ contributes $k+1$ versions: the original plus $k$ augmented variants.
+
+\textbf{Example.} With $a_1 = \texttt{lowercase}$ and $a_2 = \texttt{uppercase}$:
+\begin{align*}
+D &= \{\text{``Hello World''}\} \\
+D' &= \{\text{``Hello World''}, \text{``hello world''}, \text{``HELLO WORLD''}\}
+\end{align*}
+
+\subsection{Implementation}
+
+Corpus augmentation is implemented in the \texttt{build\_corpus\_with\_augmentation} function:
+
+\begin{algorithmic}[1]
+\Function{BuildWithAugmentation}{$\text{docs}$, $\text{augmentations}$}
+    \State $\text{corpus} \gets [\,]$
+    \For{$d$ \textbf{in} $\text{docs}$}
+        \State $\text{corpus}.\text{append}(d)$
+        \For{$a$ \textbf{in} $\text{augmentations}$}
+            \State $\text{corpus}.\text{append}(a(d))$
+        \EndFor
+    \EndFor
+    \State \Return \Call{JoinWithSeparator}{$\text{corpus}$}
+\EndFunction
+\end{algorithmic}
+
+\section{Duality and Trade-offs}
+
+Query transforms and corpus augmentation provide dual mechanisms for achieving similar goals. This section analyzes their relationship and trade-offs.
+
+\subsection{Equivalence Conditions}
+
+For a symmetric projection $\pi$, query transform and corpus augmentation produce equivalent results when:
+\begin{enumerate}
+    \item The corpus is \emph{exhaustively augmented}: $D' = \bigcup_{s \in \pi^{-1}(\pi(D))} \{s\}$
+    \item The query matches \emph{all} augmented variants equally
+\end{enumerate}
+
+In practice, exhaustive augmentation is infeasible, so the two approaches diverge.
+
+\subsection{Trade-off Comparison}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Aspect} & \textbf{Query Transform} & \textbf{Corpus Augmentation} \\
+\midrule
+Storage & $1\times$ (no increase) & $(k+1)\times$ per augmentation \\
+Index time & None & $O(k \cdot n \log n)$ \\
+Query latency & $O(1)$ transform overhead & None (pre-computed) \\
+Coverage & Query-side only & Full bidirectional \\
+Flexibility & Dynamic (per-query) & Static (build-time) \\
+\bottomrule
+\end{tabular}
+\caption{Trade-offs between query transforms and corpus augmentation.}
+\label{tab:tradeoffs}
+\end{table}
+
+\textbf{Query transforms} are preferred when:
+\begin{itemize}
+    \item Storage is constrained
+    \item Different queries need different transforms
+    \item The corpus is frequently updated (re-indexing is expensive)
+\end{itemize}
+
+\textbf{Corpus augmentation} is preferred when:
+\begin{itemize}
+    \item Query latency is critical
+    \item Bidirectional matching is required (corpus and query both vary)
+    \item The augmentation set is small and fixed
+\end{itemize}
+
+\subsection{Hybrid Approaches}
+
+Practical systems often combine both approaches:
+\begin{itemize}
+    \item Apply cheap transforms (whitespace normalization) at query time
+    \item Pre-compute expensive transforms (lemmatization) in the corpus
+    \item Use augmentation for high-frequency variations (common misspellings)
+\end{itemize}
+
+\section{Theoretical Perspective}
+
+The projection framework connects corpus-based models to neural language models through the concept of \emph{inductive bias}.
+
+\subsection{Projections as Inductive Biases}
+
+An \textbf{inductive bias} is a set of assumptions that a learning algorithm uses to generalize beyond observed data. In neural networks, architectural choices (convolutions, attention, recurrence) implement implicit inductive biases about the structure of the target function.
+
+Projections in corpus-based models serve an analogous role:
+\begin{itemize}
+    \item \textbf{Case insensitivity} assumes semantic equivalence across case variations
+    \item \textbf{Whitespace normalization} assumes formatting variations are noise
+    \item \textbf{Lemmatization} assumes morphological variants share meaning
+\end{itemize}
+
+Unlike neural inductive biases, projection-based biases are:
+\begin{enumerate}
+    \item \textbf{Explicit}: The bias is a known, inspectable function
+    \item \textbf{Composable}: Multiple biases combine predictably
+    \item \textbf{Controllable}: Biases can be enabled/disabled per-query
+\end{enumerate}
+
+\subsection{Connection to Smoothing}
+
+Traditional n-gram smoothing (Kneser-Ney, Witten-Bell) can be viewed as implementing a projection that maps unseen n-grams to ``similar'' seen n-grams. The smoothing distribution defines an implicit similarity metric.
+
+Our projection framework makes this explicit: rather than statistical interpolation, we specify exactly which strings should be treated as equivalent.
+
+\section{Future Directions}
+
+The projection framework opens several research directions:
+
+\subsection{Semantic Clustering}
+
+Map tokens to \emph{concept IDs} based on distributional similarity:
+\begin{equation}
+\pi_{\text{cluster}}(\text{``cat''}) = \pi_{\text{cluster}}(\text{``kitten''}) = \text{FELINE}
+\end{equation}
+
+This requires pre-computed embeddings but enables soft semantic matching within the exact-match framework.
+
+\subsection{Lemmatization}
+
+Map words to root forms:
+\begin{equation}
+\pi_{\text{lemma}}(\text{``running''}) = \pi_{\text{lemma}}(\text{``ran''}) = \text{``run''}
+\end{equation}
+
+This handles morphological variation but requires language-specific stemmers or lemmatizers.
+
+\subsection{Embedding-Based Soft Matching}
+
+Use neural embeddings to define continuous projections:
+\begin{equation}
+\pi_{\text{embed}}(s) = \text{argmin}_{c \in \mathcal{C}} \|E(s) - E(c)\|
+\end{equation}
+
+where $\mathcal{C}$ is a codebook and $E$ is an embedding function. This bridges the gap between exact corpus matching and neural semantic similarity.
+
+\subsection{Learned Projections}
+
+Train projections end-to-end to optimize downstream task performance:
+\begin{equation}
+\pi^* = \text{argmin}_\pi \mathcal{L}(\text{LM}_{\pi(D)}, \text{eval data})
+\end{equation}
+
+This could automatically discover useful equivalence classes from data.
+
+\section{Conclusion}
+
+The projection framework provides a principled approach to relaxing exact matching in corpus-based language models. By viewing query transforms and corpus augmentation as dual mechanisms implementing the same underlying concept---projection to equivalence classes---we gain clarity about their trade-offs and can design hybrid systems that combine their strengths.
+
+The connection to inductive biases in neural networks suggests that corpus-based models, despite their simplicity, can incorporate sophisticated prior knowledge through carefully designed projections. Future work on semantic clustering, lemmatization, and embedding-based matching will further extend the expressive power of this approach.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}

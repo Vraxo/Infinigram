@@ -1,0 +1,358 @@
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage[margin=1in]{geometry}
+\usepackage{natbib}
+\usepackage{xcolor}
+\usepackage{listings}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  columns=fullflexible,
+  xleftmargin=1em,
+  aboveskip=0.5em,
+  belowskip=0.5em,
+}
+
+\title{Infinigram: Corpus-Based Language Modeling via Suffix Arrays}
+
+\author{
+  Alexander~R.~Towell\\
+  Southern Illinois University Edwardsville\\
+  \texttt{lex@metafunctor.com}\\
+  ORCID: 0000-0001-6443-9897
+}
+
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We describe Infinigram, a corpus-based language model that uses suffix arrays over token id sequences for variable-length n-gram pattern matching. The corpus itself serves as the model: construction is a single suffix array build ($O(n \log n)$), with no iterative optimization. Given a context, Infinigram finds the longest matching suffix in the training corpus and estimates next-token probabilities from the distribution of observed continuations. The design is tokenizer-agnostic: a tiny \texttt{Tokenizer} protocol admits anything from byte-level UTF-8 (vocab 256) to a full LLM tokenizer such as \texttt{tiktoken}'s \texttt{cl100k\_base} (vocab 100{,}277). We provide autoregressive generation with temperature and top-$k$ sampling, sequence scoring for log-likelihood evaluation, and memory-mapped chunked indexes that scale to multi-GB corpora. On a 19.58\,GB English Wikipedia dump tokenized to 4.58 billion \texttt{cl100k\_base} tokens, Infinigram builds a complete index in 47 minutes using 35\,GB of disk, answers typical count and generation queries in single-digit milliseconds, and reproduces real corpus passages verbatim under greedy decoding. We release Infinigram as a Python package at \url{https://github.com/queelius/infinigram}.
+\end{abstract}
+
+\section{Introduction}
+
+Modern language modeling is dominated by neural networks trained by gradient descent on massive text corpora. Training is expensive, fine-tuning to a new domain is expensive, and the resulting weights are opaque: a specific token prediction is the output of billions of parameters whose connection to the training data is indirect.
+
+A far simpler approach has a long history in NLP. Classical n-gram models \citep{jelinek1991,chen1996empirical} estimate $P(w_n \mid w_{n-k+1}, \ldots, w_{n-1})$ directly from corpus counts, optionally with smoothing. The dominant limitation is the fixed context length $k$: too small, and dependencies longer than $k$ are lost; too large, and the $|V|^k$ count table becomes infeasible. Variable-order Markov models \citep{rissanen1983,begleiter2004prediction} address the length limitation at the cost of more complex estimation.
+
+Infinigram takes a different route: it stores the entire corpus, uses a suffix array \citep{manber1993suffix} to find the \emph{longest} context that actually occurs in the corpus, and estimates the next-token distribution from the tokens observed after that context. There is no fixed $k$, no count table, and no training beyond the suffix array build. Every prediction traces to a specific corpus position; nothing is smoothed away by hyperparameters.
+
+Liu et al.\ \citep{liu2024infini} independently developed a system of the same name that indexes trillion-token corpora for n-gram analysis and for augmenting neural language models. Our work shares the core suffix-array retrieval idea but emphasizes a different axis: tokenizer-agnosticism, a clean standalone API for prediction, generation, and scoring, and an implementation aimed at practitioners who want to index a specific corpus and work with it interactively.
+
+\subsection{Contributions}
+
+\begin{enumerate}
+    \item A corpus-based language model with $O(m \log n)$ query complexity for context length $m$ and corpus size $n$ (tokens).
+    \item A generic tokenizer abstraction: any object with \texttt{encode} and \texttt{decode} methods (tiktoken encodings, HuggingFace fast tokenizers, a built-in byte tokenizer, or user-defined) can parameterize the model. The tokenizer is recorded in the index and reconstructed at load time.
+    \item First-class autoregressive generation with temperature, top-$k$, and stop sequences, and sequence scoring that returns the total log-probability of a token sequence under the model.
+    \item A chunked memory-mapped suffix array that handles multi-GB corpora with modest RAM, together with a streaming tokenization pipeline for corpora that do not fit in memory.
+    \item An empirical evaluation on a 19.58\,GB English Wikipedia dump indexed at the \texttt{cl100k\_base} level (4.58 billion tokens, 35\,GB on disk, 47 minute build).
+\end{enumerate}
+
+\section{Method}
+
+\subsection{Suffix Array Foundation}
+
+A suffix array \citep{manber1993suffix} for a sequence $T$ of length $n$ is an array $SA$ of integers in $[0, n)$ specifying the lexicographic ordering of all suffixes of $T$. That is, $SA[i]$ gives the starting position of the $i$-th smallest suffix. Suffix arrays can be constructed in $O(n)$ time using SA-IS \citep{nong2009sais} or DC3 \citep{karkkainen2003dc3}; in practice we use \texttt{pydivsufsort}'s binding to \texttt{libdivsufsort}, which is fast enough for our corpora (tens of MB/second on byte inputs and comparable per-element rates on int32 inputs).
+
+Given a pattern $P$ of length $m$, all occurrences in $T$ can be found by binary search on $SA$ in $O(m \log n)$ time. The range of indices whose suffixes start with $P$ is contiguous in $SA$, so two binary searches (for the lower and upper bound of that range) suffice.
+
+\subsection{Token-Level Indexing}
+
+Infinigram indexes sequences of \emph{token ids}, integers in $[0, |V|)$ produced by a tokenizer. Two common cases:
+
+\paragraph{Byte-level} The tokenizer is the identity over UTF-8 bytes. $|V| = 256$; the corpus is stored as \texttt{uint8}. This is maximally tokenizer-flexible at query time but produces longer token sequences (English text averages about one byte per character after UTF-8 encoding, so $n_\text{bytes} \approx n_\text{chars}$).
+
+\paragraph{Subword-level} The tokenizer is a BPE or unigram tokenizer (\texttt{tiktoken}, SentencePiece, HuggingFace \texttt{tokenizers}). $|V|$ is typically $10^4$ to $10^5$; the corpus is stored as \texttt{int32}. English text compresses by roughly $4{-}4.5$ characters per token, so the suffix array has correspondingly fewer positions.
+
+Both cases share the same algorithms and API. The tokenizer is recorded in the index metadata and reconstructed at load time, so that a subsequent query is tokenized with the same scheme that produced the index.
+
+\subsection{Variable-Length Suffix Matching}
+
+Given a context $c = c_1 c_2 \ldots c_m$ of token ids, we want the longest suffix of $c$ that occurs in $T$. The naive procedure searches for progressively longer suffixes starting from the shortest and stops when the count drops to zero; but a shorter suffix can be absent while a longer one that contains it appears in the corpus boundary. The correct procedure searches from longest to shortest and returns on the first match:
+
+\begin{algorithmic}[1]
+\Function{LongestSuffix}{$c$, $SA$, $T$}
+    \For{$\ell = m$ \textbf{down to} $1$}
+        \State $\text{suffix} \gets c[m-\ell+1\,..\,m]$
+        \If{\Call{Count}{$\text{suffix}$, $SA$, $T$} $> 0$}
+            \State \Return positions, $\ell$
+        \EndIf
+    \EndFor
+    \State \Return $\emptyset$, $0$
+\EndFunction
+\end{algorithmic}
+
+Each iteration is $O(\ell \log n)$ for the binary search. In the worst case this is $O(m^2 \log n)$, though in practice the loop exits on the first iteration whenever the context appears in the corpus. An optional \texttt{max\_length} parameter bounds the context length, so that runtime stays bounded independent of input size.
+
+\subsection{Probability Estimation}
+
+Given the longest matching suffix of length $\ell$ occurring at positions $\{p_1, \ldots, p_k\}$ in $T$, we estimate next-token probabilities from the tokens following each match. Let $\mathrm{count}(t)$ be the number of positions $p_i$ where $T[p_i + \ell] = t$. With Laplace smoothing parameter $\alpha \geq 0$:
+\begin{equation}
+    P(t \mid c) = \frac{\mathrm{count}(t) + \alpha}{\sum_{t'} \mathrm{count}(t') + \alpha \, |V|}.
+\end{equation}
+When $\alpha = 0$, only tokens observed in the corpus receive nonzero probability. When $\alpha > 0$, every token in the vocabulary gets at least a small probability, at the cost of diluting the exact retrieval signal.
+
+The longest-matching-suffix procedure has a useful property: when the context appears even once in the corpus, the model's prediction is determined entirely by corpus evidence, not by smoothing. In the other direction, when no suffix of the context is in the corpus, we fall back to a uniform distribution over $V$ (a degenerate case that only arises if the context contains tokens unseen in the corpus).
+
+\subsubsection{Hierarchical Weighted Prediction}
+
+Rather than using only the longest match, we can combine predictions from multiple suffix lengths, weighted by length:
+\begin{equation}
+    P(t \mid c) = \frac{\sum_{\ell=1}^{L} w(\ell) \cdot \mathrm{count}_\ell(t)}{\sum_{\ell=1}^{L} w(\ell) \cdot \mathrm{total}_\ell}.
+\end{equation}
+Infinigram ships with linear ($w(\ell) = \ell$), quadratic, exponential, and sigmoid weighting. Weighted prediction trades exact-retrieval behavior for smoother distributions that mix long-context specificity with short-context coverage.
+
+\subsubsection{Stupid Backoff}
+
+Stupid Backoff \citep{brants2007large} uses the longest reliable match and backs off to shorter contexts with a penalty factor $\lambda$ (typically 0.4):
+\begin{equation}
+    S(t \mid c) = \begin{cases}
+        \mathrm{count}(t \mid c) / \mathrm{total} & \text{if } \mathrm{count}(c) \geq \tau, \\
+        \lambda \cdot S(t \mid c_{2:m}) & \text{otherwise.}
+    \end{cases}
+\end{equation}
+Compared to weighted prediction, backoff is typically faster because it stops at the first sufficiently reliable match, but less smooth at boundaries between backoff levels.
+
+\subsection{Autoregressive Generation}
+
+With a predict step in hand, autoregressive generation is a straightforward loop. Given a context $c$, repeatedly sample the next token from $P(t \mid c)$, append it, and continue until a stop condition fires:
+
+\begin{algorithmic}[1]
+\Function{Generate}{$c$, $N$, $T$, $k$, $\alpha$, $S$}
+    \State $x \gets c$; $y \gets \emptyset$
+    \For{$N$ steps}
+        \State $p \gets \Call{Predict}{x, \text{top-}k, \alpha}$
+        \State $t \gets \Call{Sample}{p, T}$ \Comment{temperature $T$; greedy if $T{=}0$}
+        \State append $t$ to $x$ and $y$
+        \ForAll{$s \in S$}
+            \If{$y$ ends with $s$}
+                \State \Return $y$ without trailing $s$
+            \EndIf
+        \EndFor
+    \EndFor
+    \State \Return $y$
+\EndFunction
+\end{algorithmic}
+
+We implement temperature scaling in log-space with max-subtraction for numerical stability. Stop-sequence detection uses $O(|s|)$ list-slice comparison on the accumulating token list, not repeated conversion to bytes. Sampling uses \texttt{random.choices}, which constructs the cumulative distribution once per call.
+
+\subsection{Sequence Scoring}
+
+To evaluate a sequence $y = y_1 y_2 \ldots y_n$ under the model, we compute the total log-probability via the chain rule:
+\begin{equation}
+    \log P(y) = \sum_{i=1}^{n} \log P(y_i \mid y_1, \ldots, y_{i-1}).
+\end{equation}
+Each factor is a single Infinigram prediction. When $P(y_i \mid \ldots)$ is zero (no corpus evidence for $y_i$ in the current context, with $\alpha = 0$), we short-circuit to $-\infty$ and terminate the loop. Scoring is useful for comparing corpora (which of several Infinigram models assigns the highest likelihood to a held-out test set?), for ranking candidate continuations, and for crude perplexity-like analyses.
+
+\section{Implementation}
+
+Infinigram is implemented in Python with hot paths delegated to NumPy vector operations and C libraries.
+
+\subsection{Tokenizer Protocol}
+
+The \texttt{Tokenizer} protocol requires three things:
+
+\begin{lstlisting}[language=Python]
+class Tokenizer(Protocol):
+    def encode(self, text: str) -> List[int]: ...
+    def decode(self, tokens: List[int]) -> str: ...
+    # plus a vocab_size or n_vocab attribute
+\end{lstlisting}
+
+A built-in \texttt{ByteTokenizer} (vocab 256, UTF-8) is the default. Any object satisfying the protocol plugs in. \texttt{tiktoken} encodings, HuggingFace fast tokenizers, and SentencePiece all satisfy it out of the box, modulo the \texttt{vocab\_size} vs.\ \texttt{n\_vocab} naming difference, which we reconcile with a single helper.
+
+The tokenizer is a property of the model. When an index is built, we record the tokenizer's kind (\texttt{byte}, \texttt{tiktoken}, or \texttt{custom}) and enough parameters to reconstruct it. On load, we rehydrate the tokenizer automatically; loading an index with one tokenizer and querying it through another would silently scramble results, so the design forces a match.
+
+\subsection{Memory-Mapped Chunked Index}
+
+A built index is a directory containing:
+\begin{itemize}
+    \item \texttt{corpus.npy}: the tokenized corpus as a flat \texttt{uint8} or \texttt{int32} array.
+    \item \texttt{suffix\_array.npy}: the suffix array as an \texttt{int32} or \texttt{int64} array (int64 is used when $n > 2^{31}$).
+    \item \texttt{meta.json}: dtype, vocabulary size, tokenizer config, and chunk list.
+\end{itemize}
+
+Both arrays are loaded with NumPy's \texttt{mmap\_mode='r'}, so query-time RAM is bounded by the working set of pages the OS has faulted in, not by the total index size. For corpora whose suffix array construction would exceed available RAM, \texttt{ChunkedMmapSuffixArray} splits the corpus into fixed-size segments, builds a separate index per chunk, and merges query results at query time. Chunked indexes are a simple union-of-suffix-arrays: a pattern's total count is the sum of per-chunk counts, and positions are returned as (chunk, offset) pairs.
+
+\subsection{Binary Search Dispatch}
+
+The suffix array construction algorithm is alphabet-generic, and \texttt{pydivsufsort} supports both \texttt{uint8} and \texttt{int32} arrays. The binary search, however, benefits from specialization. For the byte-level (\texttt{uint8}) path, we compare pattern bytes against memory-mapped corpus slices using Python's built-in bytes comparison, which reduces to C-level \texttt{memcmp}. For the token-level (\texttt{int32}) path, we compare NumPy array slices element-wise; the first differing position, located via \texttt{np.argmax} over a boolean mask, determines the lexicographic order.
+
+\subsection{Continuation Counting}
+
+The inner loop of \texttt{predict} counts how often each token id follows a given suffix match. A naive implementation iterates the match positions in Python, costing tens of microseconds per position. Our vectorized version gathers all next-token ids with a single NumPy fancy-index into the corpus array, then counts with \texttt{np.bincount} into a vector of size $|V|$. On a byte-level corpus this is a few milliseconds even for common words with millions of matches; on a subword corpus it is faster still because there are fewer matches per common suffix.
+
+\subsection{Caching}
+
+A bounded LRU cache on \texttt{continuations} keys by \texttt{(tuple(context), limit)}. Hot queries (the same prompt prefix repeated across generation steps, common utterance patterns in an evaluation) hit the cache; cold queries do not evict hot entries. The cache bounds total memory at a configurable number of entries, defaulting to 1{,}000.
+
+\subsection{API Surface}
+
+A minimal usage example:
+
+\begin{lstlisting}[language=Python]
+import tiktoken
+from infinigram import Infinigram
+
+enc = tiktoken.get_encoding("cl100k_base")
+model = Infinigram.build("corpus.txt", "my_index", tokenizer=enc)
+
+probs = model.predict("The quick brown", top_k=10)
+text  = model.generate_text("In 1969,", max_tokens=40, temperature=0)
+score = model.score("Albert Einstein was born in 1879")
+\end{lstlisting}
+
+A byte-level model is the default when no tokenizer is passed. An interactive REPL (\texttt{infinigram-repl}) and an OpenAI-compatible REST API (\texttt{infinigram-serve}) ship with the package.
+
+\section{Empirical Evaluation}
+
+We indexed an English Wikipedia dump (19.58\,GB of UTF-8 text) with \texttt{cl100k\_base} on a single machine: AMD Ryzen 5 7430U (12 cores), 62\,GB RAM, consumer SSD.
+
+\subsection{Build}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrr}
+\toprule
+Phase & Work & Wall time \\
+\midrule
+Streaming tokenization & 19.58\,GB text $\to$ 4.58\,B \texttt{int32} tokens & 1873\,s (31\,min) \\
+Chunked suffix array   & 18 chunks of $\leq 2^{28}$ tokens each              & 931\,s (16\,min) \\
+\textbf{Total}         &                                                     & \textbf{2804\,s (47\,min)} \\
+\bottomrule
+\end{tabular}
+\caption{Build pipeline on English Wikipedia, \texttt{cl100k\_base}.}
+\end{table}
+
+Streaming tokenization proceeds at roughly 10\,MB/s of source text (peak RAM under 1\,GB regardless of corpus size). Per-chunk suffix array construction runs at about 5\,million tokens per second. Peak RAM during a chunk build is roughly 7\,GB (corpus plus working memory plus output), small enough that builds on the 62\,GB machine never approach the swap limit.
+
+\subsection{Index Size}
+
+The finished index occupies 35\,GB on disk (4.58\,B \texttt{int32} tokens = 18.3\,GB plus 4.58\,B \texttt{int32} per-chunk suffix array = 17.4\,GB). For comparison, a previous byte-level build of roughly the same corpus occupied 110\,GB. The token-level representation is 68\% smaller because the average token spans 4.27 characters of source text, so each index position covers more ground.
+
+\subsection{Query Latency}
+
+Measured from a warm cache over 100 random-length queries:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lr}
+\toprule
+Quantile & Latency \\
+\midrule
+median   & 5.9\,ms \\
+p95      & 125.4\,ms \\
+max      & 143.5\,ms \\
+\bottomrule
+\end{tabular}
+\caption{Query latency over 100 mixed queries (common and rare) on the Wikipedia index.}
+\end{table}
+
+Typical queries are in the single-digit milliseconds. Common words with hundreds of thousands of matches (\texttt{"the"}, counted 957{,}754 times in the corpus) take longer because we cap enumeration at 10{,}000 positions per suffix by default to keep continuation-counting bounded.
+
+\subsection{Generation}
+
+Greedy decoding under the Wikipedia index reproduces real corpus passages verbatim. With \texttt{temperature=0}, the prompt \texttt{"Albert Einstein was"} deterministically extends to:
+\begin{quote}
+\small
+\itshape
+a frequent summer visitor; he was at Knollwood on August 6, 1945, when he heard on the radio that the atom bomb\ldots
+\end{quote}
+which is taken, word for word, from a Wikipedia article about the Knollwood Club in the Adirondacks. The model is memorizing the corpus through suffix-array retrieval; greedy decoding with a unique long context is equivalent to quoting.
+
+\subsection{Scoring}
+
+Scoring correctly ranks real text above paraphrase. Two representative pairs:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lr}
+\toprule
+Text & $\log P$ \\
+\midrule
+``The mitochondrion is the powerhouse of the cell''                    & $-46.4$ \\
+``Mitochondria are responsible for producing cellular energy''         & $-117.1$ \\
+\midrule
+``The speed of light in vacuum is approximately 299{,}792''            & $-158.1$ \\
+``Light travels through empty space at roughly 300{,}000 kilometers''  & $-170.9$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The mitochondrion example has an unusually large gap (70 nats) because the exact idiom ``powerhouse of the cell'' appears many times in Wikipedia articles, whereas the paraphrase is not itself a Wikipedia sentence. Interestingly, we observed that \emph{Colorless green ideas sleep furiously} scores higher than a real Einstein biographical fact: the Chomsky sentence is a fixed quotation in linguistics articles, so the model has seen it verbatim many times.
+
+\subsection{A Failure Mode: Stitched Retrieval}
+
+The longest-matching-suffix procedure is exact retrieval, not generation in the neural sense. When the context is unique in the corpus (likely for any prompt longer than a few tokens), the continuation is determined entirely by what happens to follow the context at that one position. If that position is near an article boundary, the generation will pivot into the next article mid-sentence. Two examples from the Wikipedia index:
+
+\begin{itemize}
+    \item \texttt{"The Manhattan Project was"} $\to$ ``\emph{the successful effort by the U.S. government to develop an atomic bomb during World War II.\textbackslash n\textbackslash n Los Alamos, New Mexico\textbackslash n Oak Ridge, Tennessee\textbackslash n Richland, Washington\textbackslash n\textbackslash nNew communities built privately in the post-World War II era\textbackslash n\textbackslash n Babbitt, Minnesota\ldots}''
+    \item \texttt{"Charles Darwin proposed"} $\to$ ``\emph{a theory that explained the existence of reefs by means of slow subsidence of the ocean floor. His theories have been verified and expanded in the development of plate tectonics.\textbackslash nHistory\textbackslash nIn the Early Jurassic, the supercontinent Pangaea was surrounded by\ldots}''
+\end{itemize}
+
+Both outputs are real Wikipedia prose, but the second example transitions from Darwin's coral-reef theory to plate tectonics to the Early Jurassic as the longest-matching suffix shortens and picks up new articles. Corpus-based generation of this form is best understood as a \emph{tour through the corpus} guided by suffix-matching, not as a coherent authored sequence. This is honest behavior given the algorithm, and it is easy to inspect: each generated token traces to a specific corpus position. Users who need coherence should pair generation with shorter \texttt{max\_tokens}, a temperature-based exploration strategy, or use Infinigram as a retrieval backbone rather than a stand-alone generator.
+
+\section{Applications}
+
+\paragraph{Standalone language model.}
+Build an index on a corpus of interest; predict, generate, and score directly. Useful as a cheap high-fidelity model of the corpus itself, as a baseline in retrieval and generation studies, and as a teaching tool that makes the connection between corpus statistics and next-token probabilities explicit.
+
+\paragraph{Retrieval backbone.}
+The longest-matching-suffix query and the positions it returns can feed larger systems: a RAG pipeline that wants passage-level context grounded in exact matches, an evaluation harness that needs per-example provenance, or an interactive corpus-exploration tool.
+
+\paragraph{Style and domain indexing.}
+Building separate indexes over the writing of a particular author, a specific technical domain, or a time period lets downstream systems condition on those corpora at query time with no retraining. Switching corpora is a file-system operation.
+
+\paragraph{LLM probability mixing (with caveats).}
+An appealing idea is to mix Infinigram's next-token distribution with a neural LLM's, weighting exact corpus evidence against the LLM's learned distribution. This works cleanly if and only if Infinigram is indexed with the \emph{same} tokenizer the LLM uses. If the Infinigram index is byte-level and the LLM is subword-level, one must marginalize byte probabilities into token probabilities via the chain rule, and this quantity is not quite the token probability the LLM reports: it aggregates over all tokenizations of the same byte prefix, which in BPE tokenizers is generally not unique. Additionally, tokenizers with sub-UTF-8 fragment tokens (common in Llama and GPT-2 style BPE) do not round-trip cleanly through \texttt{decode(token\_id).encode(utf-8)}. We recommend matching tokenizers end to end for this use case; when the vocabularies match, mixing reduces to a three-line weighted average of two token-indexed distributions.
+
+\section{Related Work}
+
+\paragraph{N-gram language models.}
+Classical n-gram models with smoothing (Kneser-Ney, Witten-Bell, Good-Turing; see \citet{chen1996empirical} for a survey) are the direct intellectual ancestor. The fixed-order restriction is the limitation they are best known for; variable-order Markov models \citep{rissanen1983,begleiter2004prediction} lift it at the cost of more complex estimation.
+
+\paragraph{Suffix arrays and string indexes.}
+Suffix arrays \citep{manber1993suffix} and suffix trees \citep{weiner1973,mccreight1976} are the classical data structures for full-text indexing. Compressed variants such as the FM-index \citep{ferragina2000,ferragina2005} offer the same query complexity with smaller memory footprint. Our use of suffix arrays for language modeling takes their ability to find all pattern occurrences in $O(m \log n)$ and treats the set of occurrences as a conditional distribution.
+
+\paragraph{Retrieval-augmented generation.}
+RAG systems \citep{lewis2020rag,izacard2021atlas} retrieve semantically similar passages and condition a neural generator on them. Infinigram retrieves exact-match patterns and modifies probabilities rather than prepending context. The approaches are complementary and could be composed.
+
+\paragraph{$k$NN language models.}
+\citet{khandelwal2020knnlm} augment a neural LM with nearest-neighbor lookup in a datastore of context embeddings. This requires an embedding per training token (hundreds of GB for large corpora) and approximate nearest-neighbor search. Infinigram's exact-match approach uses much less storage and avoids the approximation, at the cost of no soft semantic matching.
+
+\paragraph{Concurrent work: infini-gram.}
+\citet{liu2024infini} present a system, also called infini-gram, that indexes 5 trillion tokens for n-gram analysis and LLM augmentation. They emphasize scaling to web-scale corpora and use the index to audit neural LMs. Our work shares the core suffix-array idea and arrives at similar design decisions (tokenizer-level indexing, memory-mapped storage). We emphasize a different axis: a clean, tokenizer-agnostic standalone library with generation and scoring as first-class operations, aimed at practitioners who want to build an index on a specific corpus and work with it interactively. The two projects are complementary and we see no barrier to cross-pollination.
+
+\section{Conclusion and Future Work}
+
+Infinigram offers a simple, fast, and honest approach to language modeling: the corpus is the model, every prediction traces to specific positions in the corpus, and construction is a single suffix array build. We have shown that the same code handles byte-level and subword-level indexing, that generation and scoring are straightforward additions on top of the predict interface, and that the whole system scales to multi-GB English Wikipedia with a 47-minute build on a commodity workstation.
+
+Future directions:
+
+\begin{itemize}
+    \item \textbf{Tokenizer co-training.} Building a BPE or unigram tokenizer on the target corpus before indexing would produce a vocabulary optimized for that corpus, at the cost of the index being tied to that specific tokenizer.
+    \item \textbf{Compressed indexes.} An FM-index or grammar-compressed suffix array would reduce disk usage for highly repetitive corpora such as legislative text or source code.
+    \item \textbf{Multi-scale models.} Indexing the same corpus at multiple tokenization granularities (bytes, subwords, words) and combining their predictions would smooth the exact-retrieval behavior without giving up traceability.
+    \item \textbf{Incremental updates.} Rebuilding a suffix array is $O(n \log n)$; for use cases where the corpus grows over time, streaming index updates based on approximate structures would lower the marginal cost of ingestion.
+    \item \textbf{Retrieval-augmented mixing with shared tokenizers.} When an LLM and Infinigram share a tokenizer, the mixing story becomes clean: three lines of weighted averaging over token distributions, no marginalization artifacts.
+\end{itemize}
+
+The source code is available at \url{https://github.com/queelius/infinigram}.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}
