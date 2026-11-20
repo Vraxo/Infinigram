@@ -1,30 +1,12 @@
-// Suffix array implementation for efficient n-gram operations.
-//
-// The Python reference builds the array with `pydivsufsort` (SA-IS, O(n)). No
-// equivalent exists for .NET, so construction here uses prefix doubling with
-// radix sort: O(n log n) time, O(n) extra memory, and simple enough to verify.
-// Swapping in SA-IS later only requires replacing <see cref="BuildSuffixArray"/>.
-//
-// The corpus is stored as token ids in an <c>int[]</c> — byte-level corpora use
-// ids 0..255, token-level corpora use ids up to <c>int.MaxValue</c>. All binary
-// searches compare a pattern against the suffix at a suffix-array position;
-// ranges are half-open <c>[left, right)</c>.
-
 using System.Text;
 
 namespace Infinigram;
 
-/// <summary>
-/// In-memory suffix array supporting byte- and token-level corpora.
-/// </summary>
 public sealed class SuffixArray
 {
     private readonly int[] _corpus;
     private readonly int[] _sa;
 
-    /// <summary>
-    /// Build a suffix array from a sequence of token ids.
-    /// </summary>
     public SuffixArray(IReadOnlyList<int> tokens)
     {
         ArgumentNullException.ThrowIfNull(tokens);
@@ -32,23 +14,18 @@ public sealed class SuffixArray
         _sa = BuildSuffixArray(_corpus);
     }
 
-    // Private ctor for Save/Load round-trips that already have both arrays.
     private SuffixArray(int[] corpus, int[] suffixArray)
     {
         _corpus = corpus;
         _sa = suffixArray;
     }
 
-    /// <summary>Number of tokens in the corpus.</summary>
     public int Length => _corpus.Length;
 
-    /// <summary>The corpus as token ids.</summary>
     public IReadOnlyList<int> Corpus => _corpus;
 
-    /// <summary>The suffix array itself: <c>SuffixArray[i]</c> is the start position of the i-th smallest suffix.</summary>
     public IReadOnlyList<int> Positions => _sa;
 
-    /// <summary>Return the token id at <paramref name="position"/>, with bounds checking.</summary>
     public int GetToken(int position)
     {
         if (position < 0 || position >= _corpus.Length)
@@ -59,10 +36,6 @@ public sealed class SuffixArray
         return _corpus[position];
     }
 
-    /// <summary>
-    /// All positions where <paramref name="pattern"/> occurs in the corpus,
-    /// optionally capped at <paramref name="limit"/>.
-    /// </summary>
     public List<int> Search(IReadOnlyList<int> pattern, int? limit = null)
     {
         ArgumentNullException.ThrowIfNull(pattern);
@@ -92,7 +65,6 @@ public sealed class SuffixArray
         return positions;
     }
 
-    /// <summary>Count occurrences without materializing positions.</summary>
     public int Count(IReadOnlyList<int> pattern)
     {
         ArgumentNullException.ThrowIfNull(pattern);
@@ -105,10 +77,6 @@ public sealed class SuffixArray
         return Math.Max(0, right - left);
     }
 
-    /// <summary>
-    /// Return up to <paramref name="window"/> tokens of context on either side of
-    /// <paramref name="position"/>.
-    /// </summary>
     public (List<int> Before, List<int> After) GetContext(int position, int window = 10)
     {
         if (position < 0 || position >= _corpus.Length)
@@ -138,10 +106,6 @@ public sealed class SuffixArray
         return (before, after);
     }
 
-    /// <summary>
-    /// Persist corpus and suffix array to <paramref name="directory"/> as
-    /// <c>corpus.bin</c> and <c>suffix_array.bin</c> (little-endian int32).
-    /// </summary>
     public void Save(string directory)
     {
         ArgumentNullException.ThrowIfNull(directory);
@@ -150,7 +114,6 @@ public sealed class SuffixArray
         WriteIntArray(Path.Combine(directory, "suffix_array.bin"), _sa);
     }
 
-    /// <summary>Load an index previously written by <see cref="Save"/>.</summary>
     public static SuffixArray Load(string directory)
     {
         ArgumentNullException.ThrowIfNull(directory);
@@ -175,11 +138,6 @@ public sealed class SuffixArray
         return new SuffixArray(corpus, sa);
     }
 
-    /// <summary>
-    /// Half-open range <c>[left, right)</c> in the suffix array whose entries are the
-    /// occurrences of <paramref name="pattern"/>. Port of the Python
-    /// <c>_binary_search_range</c>.
-    /// </summary>
     private (int Left, int Right) FindRange(int[] pattern)
     {
         int n = _sa.Length;
@@ -216,10 +174,6 @@ public sealed class SuffixArray
         return (left, lo);
     }
 
-    // Compare `pattern` against the suffix of the corpus starting at `pos`.
-    // < 0 when pattern < suffix, > 0 when pattern > suffix, 0 when equal over
-    // the compared extent; prefixOnly limits comparison to the common prefix
-    // and reports pattern-fits-in-suffix as 0.
     private int CompareAt(int[] pattern, int pos, bool prefixOnly)
     {
         int n = _corpus.Length;
@@ -267,7 +221,7 @@ public sealed class SuffixArray
         writer.Write(data.Length);
         for (int i = 0; i < data.Length; i++)
         {
-            writer.Write(data[i]); // 4 bytes, little-endian
+            writer.Write(data[i]);
         }
     }
 
@@ -304,7 +258,6 @@ public sealed class SuffixArray
         var rank = new int[n];
         var tmpRank = new int[n];
 
-        // Initial ranks: order-preserving compression of the token ids.
         var vals = new int[n];
         Array.Copy(data, vals, n);
         Array.Sort(vals);
@@ -332,11 +285,9 @@ public sealed class SuffixArray
         int k = 1;
         while (k < n)
         {
-            // Sort by (rank[i], rank[i + k]) via two stable counting sorts.
             sa = CountingSortBy(sa, rank, k, secondKey: true, nClasses: nClasses);
             sa = CountingSortBy(sa, rank, k: 0, secondKey: false, nClasses: nClasses);
 
-            // Re-rank.
             tmpRank[sa[0]] = 0;
             int classes = 1;
             for (int i = 1; i < n; i++)
@@ -368,9 +319,6 @@ public sealed class SuffixArray
         return sa;
     }
 
-    // Stable counting sort of `sa` by either the first key (rank[i],
-    // secondKey == false) or the second key (rank[i + k] + 1, with 0 meaning
-    // "no suffix at i + k"). Ranges derived from nClasses.
     private static int[] CountingSortBy(int[] sa, int[] rank, int k, bool secondKey, int nClasses)
     {
         int n = sa.Length;
@@ -407,86 +355,5 @@ public sealed class SuffixArray
         }
         int idx = i + k;
         return idx < rank.Length ? rank[idx] + 1 : 0;
-    }
-}
-
-/// <summary>
-/// Small bounded LRU cache used for continuation counts. Values may be
-/// <c>null</c> (a cached "no match").
-/// </summary>
-internal sealed class LruCache<TKey, TValue> where TKey : notnull
-{
-    private int _capacity;
-    private readonly Dictionary<TKey, LinkedListNode<KeyValuePair<TKey, TValue>>> _map;
-    private readonly LinkedList<KeyValuePair<TKey, TValue>> _order;
-
-    public LruCache(int capacity)
-    {
-        if (capacity < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(capacity), "capacity must be at least 1");
-        }
-        _capacity = capacity;
-        _map = new Dictionary<TKey, LinkedListNode<KeyValuePair<TKey, TValue>>>(capacity);
-        _order = new LinkedList<KeyValuePair<TKey, TValue>>();
-    }
-
-    public int Count => _map.Count;
-
-    /// <summary>Current capacity (internal, for tests).</summary>
-    internal int Capacity => _capacity;
-
-    /// <summary>Resize the cache, evicting oldest entries to fit (internal, for tests).</summary>
-    internal void SetCapacity(int capacity)
-    {
-        if (capacity < 1)
-        {
-            throw new ArgumentOutOfRangeException(nameof(capacity), "capacity must be at least 1");
-        }
-        _capacity = capacity;
-        while (_map.Count > _capacity)
-        {
-            var oldest = _order.First!;
-            _order.RemoveFirst();
-            _map.Remove(oldest.Value.Key);
-        }
-    }
-
-    public bool TryGet(TKey key, out TValue? value)
-    {
-        if (_map.TryGetValue(key, out var node))
-        {
-            _order.Remove(node);
-            _order.AddLast(node);
-            value = node.Value.Value;
-            return true;
-        }
-        value = default;
-        return false;
-    }
-
-    public void Set(TKey key, TValue value)
-    {
-        if (_map.TryGetValue(key, out var node))
-        {
-            node.Value = new KeyValuePair<TKey, TValue>(key, value);
-            _order.Remove(node);
-            _order.AddLast(node);
-            return;
-        }
-        if (_map.Count >= _capacity)
-        {
-            var oldest = _order.First!;
-            _order.RemoveFirst();
-            _map.Remove(oldest.Value.Key);
-        }
-        var newNode = _order.AddLast(new KeyValuePair<TKey, TValue>(key, value));
-        _map[key] = newNode;
-    }
-
-    public void Clear()
-    {
-        _map.Clear();
-        _order.Clear();
     }
 }

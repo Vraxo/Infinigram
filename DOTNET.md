@@ -13,8 +13,10 @@ global.json                         # Selects the Microsoft.Testing.Platform run
 src/Infinigram/
   Infinigram.csproj                 # net11.0 class library
   Infinigram.cs                     # Model: predict / continuations / generate / score / I/O
-  SuffixArray.cs                    # Suffix array (+ internal LRU cache)
-  Tokenizers.cs                     # ITokenizer, ByteTokenizer
+  SuffixArray.cs                    # Suffix array
+  LruCache.cs                       # Internal LRU cache
+  ITokenizer.cs                     # Tokenizer interface
+  ByteTokenizer.cs                  # UTF-8 byte tokenizer
   Sampling.cs                       # Temperature sampling, top-k / top-p filters
   CorpusUtils.cs                    # Document/JSONL corpus builders
 tests/Infinigram.Tests/
