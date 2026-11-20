@@ -35,7 +35,7 @@ public sealed partial class NGramModel : IDisposable
         {
             throw new ArgumentException("Corpus must not be empty.", nameof(corpus));
         }
-        _sa = new SuffixArray(ValidateCorpus(corpus, "Corpus"));
+        _sa = new SuffixArray(CorpusValidator.Validate(corpus, VocabSize, "Corpus"));
     }
 
     public NGramModel(byte[] corpus, ITokenizer? tokenizer = null, int? maxLength = null)
@@ -53,7 +53,7 @@ public sealed partial class NGramModel : IDisposable
         {
             throw new ArgumentException("Corpus must not be empty.", nameof(corpus));
         }
-        _sa = new SuffixArray(ValidateCorpus(corpus.Select(b => (int)b).ToList(), "Corpus"));
+        _sa = new SuffixArray(CorpusValidator.Validate(corpus.Select(b => (int)b).ToList(), VocabSize, "Corpus"));
     }
 
     public NGramModel(string corpus, ITokenizer? tokenizer = null, int? maxLength = null)
@@ -67,40 +67,6 @@ public sealed partial class NGramModel : IDisposable
         _sa = new SuffixArray(Tokenizer.Encode(corpus));
     }
 
-
-    private int[] ValidateCorpus(IReadOnlyList<int> tokens, string what)
-    {
-        if (tokens.Count == 0)
-        {
-            return Array.Empty<int>();
-        }
-
-        var arr = tokens as int[] ?? tokens.ToArray();
-        int min = int.MaxValue, max = int.MinValue;
-        foreach (int t in arr)
-        {
-            if (t < min) min = t;
-            if (t > max) max = t;
-        }
-
-        if (min < 0 || max >= VocabSize)
-        {
-            string message = VocabSize == 256
-                ? $"{what} must contain only bytes (0-255), but found {(max >= 256 ? max : min)}"
-                : $"{what} contains token ids outside [0, {VocabSize}); min={min}, max={max}";
-            throw new ArgumentOutOfRangeException(what, message);
-        }
-        return arr;
-    }
-
-    private List<int> ApplyMaxLength(IReadOnlyList<int> context)
-    {
-        if (MaxLength is int max && max > 0 && context.Count > max)
-        {
-            return context.Skip(context.Count - max).ToList();
-        }
-        return context.ToList();
-    }
 
     public List<int> Search(IReadOnlyList<int> pattern, int? limit = null)
     {
@@ -131,7 +97,7 @@ public sealed partial class NGramModel : IDisposable
             return (-1, 0);
         }
 
-        var ctx = ApplyMaxLength(context);
+        var ctx = SuffixMatcher.LimitContext(context, MaxLength);
         var (length, position) = SuffixMatcher.LongestMatchLength(_sa, ctx);
         return length == 0 ? (-1, 0) : (position, length);
     }
@@ -145,24 +111,14 @@ public sealed partial class NGramModel : IDisposable
             return new List<(int, List<int>)>();
         }
 
-        var ctx = ApplyMaxLength(context);
-        var matches = new List<(int Length, List<int> Positions)>();
-        for (int length = ctx.Count; length > 0; length--)
-        {
-            var positions = SuffixMatcher.SearchSuffix(_sa, ctx, length, limit: null);
-            if (positions.Count > 0)
-            {
-                matches.Add((length, positions));
-            }
-        }
-        return matches;
+        return SuffixMatcher.FindAll(_sa, SuffixMatcher.LimitContext(context, MaxLength));
     }
 
     public Dictionary<int, int>? Continuations(IReadOnlyList<int> context, int? limit = DefaultContinuationLimit)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(context);
-        return _continuations.Get(_sa, VocabSize, ApplyMaxLength(context), limit);
+        return _continuations.Get(_sa, VocabSize, SuffixMatcher.LimitContext(context, MaxLength), limit);
     }
 
     public void ClearCache() => _continuations.Clear();
@@ -209,7 +165,7 @@ public sealed partial class NGramModel : IDisposable
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(newTokens);
-        UpdateInternal(ValidateCorpus(newTokens, "new_tokens"));
+        UpdateInternal(CorpusValidator.Validate(newTokens, VocabSize, "new_tokens"));
     }
 
     public void Update(byte[] newTokens)
@@ -234,12 +190,7 @@ public sealed partial class NGramModel : IDisposable
 
     private void UpdateInternal(int[] newTokens)
     {
-        var existing = _sa.Corpus as int[] ?? _sa.Corpus.ToArray();
-        var updated = new int[existing.Length + newTokens.Length];
-        Array.Copy(existing, updated, existing.Length);
-        Array.Copy(newTokens, 0, updated, existing.Length, newTokens.Length);
-
-        _sa = new SuffixArray(updated);
+        _sa = CorpusAppender.Append(_sa, newTokens);
 
         if (_modelDir is not null)
         {
