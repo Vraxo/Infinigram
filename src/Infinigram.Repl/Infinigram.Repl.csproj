@@ -6,6 +6,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Spectre.Console" Version="0.57.2" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../Infinigram/Infinigram.csproj" />
   </ItemGroup>
 </Project>

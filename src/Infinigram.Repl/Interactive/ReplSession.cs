@@ -1,4 +1,5 @@
 using System.Text;
+using Spectre.Console;
 using Model = Infinigram.NGramModel;
 
 namespace Infinigram.Repl;
@@ -8,6 +9,8 @@ public static class ReplSession
     public static int Run(TextReader input, TextWriter output, TextWriter error, string corpusPath,
         TextNormalizationOptions? normalization = null)
     {
+        var console = CreateConsole(output);
+        var errorConsole = CreateConsole(error);
         Model model;
         try
         {
@@ -18,16 +21,17 @@ public static class ReplSession
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
-            error.WriteLine($"Could not load corpus '{corpusPath}': {ex.Message}");
+            errorConsole.Markup("[red]Could not load corpus[/]");
+            error.WriteLine($" '{corpusPath}': {ex.Message}");
             return 1;
         }
 
         using (model)
         {
-            output.WriteLine("Enter a prompt to generate a continuation. End input to exit.");
+            console.MarkupLine("[grey]Enter a prompt to generate a continuation. End input to exit.[/]");
             while (true)
             {
-                output.Write("infinigram> ");
+                console.Markup("[bold cyan]infinigram> [/]");
                 output.Flush();
                 string? prompt = input.ReadLine();
                 if (prompt is null) break;
@@ -36,5 +40,15 @@ public static class ReplSession
             }
         }
         return 0;
+    }
+
+    private static IAnsiConsole CreateConsole(TextWriter writer)
+    {
+        var destination = new AnsiConsoleOutput(writer);
+        return AnsiConsole.Create(new AnsiConsoleSettings
+        {
+            Out = destination,
+            Ansi = destination.IsTerminal ? AnsiSupport.Detect : AnsiSupport.No,
+        });
     }
 }

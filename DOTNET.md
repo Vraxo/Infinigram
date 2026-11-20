@@ -70,12 +70,13 @@ dotnet run --project src/Infinigram.Repl
 ```
 
 The REPL loads the file once at startup. Each line you enter is a prompt; it
-prints a greedy continuation of up to 80 UTF-8 bytes. End input with Ctrl+D
-(or Ctrl+Z then Enter on Windows) to exit. Indexing large files can take time
-and memory.
+prints a greedy continuation of up to 80 UTF-8 bytes. The prompt and status use
+Spectre.Console styling when the terminal supports it; redirected output remains
+plain text. End input with Ctrl+D (or Ctrl+Z then Enter on Windows) to exit.
+Indexing large files can take time and memory.
 
 Normalization is off by default. To enable it for both the file and every prompt,
-change the `normalization` variable in `src/Infinigram.Repl/Program.cs` to:
+change the `normalization` variable in `src/Infinigram.Repl/Interactive/Program.cs` to:
 
 ```csharp
 TextNormalizationOptions? normalization = new() { Lowercase = true };

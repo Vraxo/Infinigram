@@ -50,6 +50,37 @@ public class ReplTests
     }
 
     [Fact]
+    public void GeneratedMarkupIsPrintedLiterallyWithoutAnsiWhenRedirected()
+    {
+        using var temp = new TempDir();
+        string path = Path.Combine(temp.Path, "corpus.txt");
+        File.WriteAllText(path, "a[red]a[red]a[red]");
+        using var model = new Model(File.ReadAllBytes(path));
+        string expected = model.GenerateText("a", maxTokens: 80, temperature: 0);
+        var output = new StringWriter();
+        var error = new StringWriter();
+
+        ReplSession.Run(new StringReader("a\n"), output, error, path).Should().Be(0);
+        expected.Should().Contain("[red]");
+        output.ToString().Should().Contain("infinigram> " + expected + Environment.NewLine);
+        output.ToString().Should().NotContain("\u001b[");
+        error.ToString().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ErrorPathWithMarkupCharactersIsPrintedLiterally()
+    {
+        using var temp = new TempDir();
+        string path = Path.Combine(temp.Path, "[missing].txt");
+        var output = new StringWriter();
+        var error = new StringWriter();
+
+        ReplSession.Run(new StringReader(""), output, error, path).Should().Be(1);
+        error.ToString().Should().Contain(path).And.NotContain("\u001b[");
+        output.ToString().Should().BeEmpty();
+    }
+
+    [Fact]
     public void InvalidUtf8IsRejectedOnlyWhenNormalizationIsEnabled()
     {
         using var temp = new TempDir();
