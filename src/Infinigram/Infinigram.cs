@@ -643,6 +643,15 @@ public sealed class Infinigram : IDisposable
         _cache.Clear();
     }
 
+    // Test hooks: cache internals visible to the test assembly only.
+    internal int ContinuationsCacheCount => _cache.Count;
+
+    internal int ContinuationsCacheCapacity
+    {
+        get => _cache.Capacity;
+        set => _cache.SetCapacity(value);
+    }
+
     /// <summary>
     /// Predict next-token probabilities.
     /// </summary>
