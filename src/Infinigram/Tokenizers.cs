@@ -10,6 +10,8 @@
 // produced it so load-time mismatches are caught instead of silently scrambling
 // results.
 
+using System.Text;
+
 namespace Infinigram;
 
 /// <summary>

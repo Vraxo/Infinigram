@@ -773,7 +773,7 @@ public sealed class Infinigram : IDisposable
                 {
                     int stopLength = stopSeq.Count;
                     if (generated.Count >= stopLength &&
-                        generated.AsSpan()[^stopLength..].SequenceEqual(stopSeq.ToArray()))
+                        generated[^stopLength..].SequenceEqual(stopSeq))
                     {
                         generated.RemoveRange(generated.Count - stopLength, stopLength);
                         return generated;
