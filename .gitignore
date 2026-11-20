@@ -1,0 +1,13 @@
+# .NET build output
+bin/
+obj/
+out/
+TestResults/
+artifacts/
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+*.sqlite
