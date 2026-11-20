@@ -2,23 +2,18 @@ using System.Text;
 
 namespace Infinigram.Tests;
 
-/// <summary>Shared helpers for building token-id sequences and temp directories.</summary>
 internal static class TestData
 {
-    /// <summary>Encode an ASCII/UTF-8 string to a token-id list.</summary>
     public static List<int> B(string text) =>
         Encoding.UTF8.GetBytes(text).Select(b => (int)b).ToList();
 
-    /// <summary>Token-id list from raw byte values.</summary>
     public static List<int> B(params byte[] bytes) =>
         bytes.Select(b => (int)b).ToList();
 
-    /// <summary>Token-ids for a byte range [start, start+count).</summary>
     public static List<int> Range(int start, int count) =>
         Enumerable.Range(start, count).ToList();
 }
 
-/// <summary>A unique temporary directory, recursively deleted on dispose.</summary>
 internal sealed class TempDir : IDisposable
 {
     public string Path { get; } =
@@ -44,11 +39,9 @@ internal sealed class TempDir : IDisposable
         }
         catch (IOException)
         {
-            // best effort cleanup
         }
         catch (UnauthorizedAccessException)
         {
-            // best effort cleanup
         }
     }
 }

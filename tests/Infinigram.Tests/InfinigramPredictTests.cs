@@ -1,5 +1,3 @@
-// Port of Python/tests/test_infinigram.py — Predict, Update, edge cases,
-// integration, GetToken, Generate, Score, and SearchLimit suites.
 using AwesomeAssertions;
 
 namespace Infinigram.Tests;
@@ -72,7 +70,6 @@ public class PredictTests
     [Fact]
     public void TopKReturnsCorrectItems()
     {
-        // After "a", 'b' is most common, then 'c', then 'd'.
         using var model = new Infinigram(TestData.B("ab ab ab ab ac ac ad").ToArray());
         var probs = model.Predict(TestData.B("a"), topK: 2);
 
@@ -178,7 +175,7 @@ public class UpdateTests
         using var model = new Infinigram(new List<int> { 1, 2, 3 });
         var context = new List<int> { 2, 3 };
 
-        _ = model.Continuations(context); // warm cache with no-continuation state
+        _ = model.Continuations(context);
         model.Update(new List<int> { 2, 3, 4 });
 
         var after = model.Continuations(context);
@@ -195,7 +192,7 @@ public class UpdateTests
             model.Update(new List<int> { 65 + (i % 26) });
         }
 
-        model.N.Should().Be(23); // 3 original + 20 appended
+        model.N.Should().Be(23);
         var probs = model.Predict(new List<int> { 1, 2, 3 });
         probs.Should().NotBeNull();
     }
@@ -206,7 +203,7 @@ public class UpdateTests
         using var model = new Infinigram("abc");
         model.Update(" def");
 
-        model.N.Should().Be(7); // "abc" (3) + " def" (4)
+        model.N.Should().Be(7);
         model.Count(TestData.B(" def")).Should().Be(1);
     }
 }
@@ -251,7 +248,6 @@ public class EdgeCaseTests
         using var model = new Infinigram(new List<int> { 1, 2, 3 });
         var probs = model.Predict(TestData.Range(1, 10));
 
-        // Either no suffix matches (null) or a partial match gives a distribution.
         (probs is null || probs.Count > 0).Should().BeTrue();
     }
 }
