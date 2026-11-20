@@ -243,8 +243,7 @@ public sealed partial class Infinigram : IDisposable
 
         if (_modelDir is not null)
         {
-            _sa.Save(_modelDir);
-            WriteMeta(_modelDir, updated.Length);
+            InfinigramStorage.Save(_modelDir, _sa, Tokenizer, VocabSize, MaxLength);
         }
         ClearCache();
     }
