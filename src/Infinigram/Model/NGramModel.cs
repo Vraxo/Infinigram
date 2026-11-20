@@ -1,6 +1,6 @@
 namespace Infinigram;
 
-public sealed partial class NGramModel : IDisposable
+public sealed class NGramModel : IDisposable
 {
     public const int DefaultContinuationLimit = 10000;
 
@@ -26,6 +26,34 @@ public sealed partial class NGramModel : IDisposable
         VocabSize = tokenizer.VocabSize;
         MaxLength = maxLength;
     }
+
+    internal NGramModel(ITokenizer tokenizer, int? maxLength, SuffixArray suffixArray, string modelDirectory)
+        : this(tokenizer, maxLength)
+    {
+        _sa = suffixArray;
+        _modelDir = modelDirectory;
+    }
+
+    public static NGramModel Build(string corpus, string modelPath, ITokenizer? tokenizer = null,
+        int? maxLength = null, bool verbose = true) =>
+        ModelPersistence.Build(corpus, modelPath, tokenizer, maxLength, verbose);
+
+    public static NGramModel Build(byte[] corpus, string modelPath, ITokenizer? tokenizer = null,
+        int? maxLength = null, bool verbose = true) =>
+        ModelPersistence.Build(corpus, modelPath, tokenizer, maxLength, verbose);
+
+    public static NGramModel Build(IReadOnlyList<int> corpus, string modelPath, ITokenizer? tokenizer = null,
+        int? maxLength = null, bool verbose = true) =>
+        ModelPersistence.Build(corpus, modelPath, tokenizer, maxLength, verbose);
+
+    public static NGramModel BuildFromFile(string corpusFilePath, string modelPath, ITokenizer? tokenizer = null,
+        int? maxLength = null, bool verbose = true) =>
+        ModelPersistence.BuildFromFile(corpusFilePath, modelPath, tokenizer, maxLength, verbose);
+
+    public static NGramModel Load(string modelPath, ITokenizer? tokenizer = null, int? maxLength = null) =>
+        ModelPersistence.Load(modelPath, tokenizer, maxLength);
+
+    public static List<string> ListModels(string? modelsDir = null) => ModelPersistence.ListModels(modelsDir);
 
     public NGramModel(IReadOnlyList<int> corpus, ITokenizer? tokenizer = null, int? maxLength = null)
         : this(tokenizer ?? new ByteTokenizer(), maxLength)

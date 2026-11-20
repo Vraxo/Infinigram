@@ -46,6 +46,27 @@ public class PersistenceTests : IDisposable
     }
 
     [Fact]
+    public void BuildFromFileAndLoadRoundTripWithCustomTokenizer()
+    {
+        string sourcePath = Path.Combine(_temp.Path, "corpus.txt");
+        File.WriteAllText(sourcePath, "abcabc");
+        string modelPath = _temp.SubDir("from-file");
+        var tokenizer = new TestTokenizer(512);
+
+        using (var built = NGramModel.BuildFromFile(sourcePath, modelPath, tokenizer, maxLength: 3, verbose: false))
+        {
+            built.ModelPath.Should().Be(Path.GetFullPath(modelPath));
+            built.Count(tokenizer.Encode("abc")).Should().Be(2);
+            built.Update("abc");
+        }
+
+        using var loaded = NGramModel.Load(modelPath, tokenizer);
+        loaded.MaxLength.Should().Be(3);
+        loaded.Count(tokenizer.Encode("abc")).Should().Be(3);
+        loaded.N.Should().Be(9);
+    }
+
+    [Fact]
     public void LoadProducesSamePredictions()
     {
         var modelPath = _temp.SubDir("model");

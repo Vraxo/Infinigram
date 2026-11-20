@@ -2,9 +2,9 @@ using System.Diagnostics;
 
 namespace Infinigram;
 
-public sealed partial class NGramModel
+internal static class ModelPersistence
 {
-    public static NGramModel Build(string corpus, string modelPath, ITokenizer? tokenizer = null,
+    internal static NGramModel Build(string corpus, string modelPath, ITokenizer? tokenizer = null,
         int? maxLength = null, bool verbose = true)
     {
         ArgumentNullException.ThrowIfNull(corpus);
@@ -13,7 +13,7 @@ public sealed partial class NGramModel
         return BuildFromTokens(tok.Encode(corpus).ToList(), modelPath, tok, maxLength, verbose);
     }
 
-    public static NGramModel Build(byte[] corpus, string modelPath, ITokenizer? tokenizer = null,
+    internal static NGramModel Build(byte[] corpus, string modelPath, ITokenizer? tokenizer = null,
         int? maxLength = null, bool verbose = true)
     {
         ArgumentNullException.ThrowIfNull(corpus);
@@ -29,7 +29,7 @@ public sealed partial class NGramModel
         return BuildFromTokens(corpus.Select(b => (int)b).ToList(), modelPath, tok, maxLength, verbose);
     }
 
-    public static NGramModel Build(IReadOnlyList<int> corpus, string modelPath, ITokenizer? tokenizer = null,
+    internal static NGramModel Build(IReadOnlyList<int> corpus, string modelPath, ITokenizer? tokenizer = null,
         int? maxLength = null, bool verbose = true)
     {
         ArgumentNullException.ThrowIfNull(corpus);
@@ -37,7 +37,7 @@ public sealed partial class NGramModel
         return BuildFromTokens(corpus.ToList(), modelPath, tokenizer ?? new ByteTokenizer(), maxLength, verbose);
     }
 
-    public static NGramModel BuildFromFile(string corpusFilePath, string modelPath, ITokenizer? tokenizer = null,
+    internal static NGramModel BuildFromFile(string corpusFilePath, string modelPath, ITokenizer? tokenizer = null,
         int? maxLength = null, bool verbose = true)
     {
         ArgumentNullException.ThrowIfNull(corpusFilePath);
@@ -74,9 +74,7 @@ public sealed partial class NGramModel
 
         var stopwatch = Stopwatch.StartNew();
         string fullPath = Path.GetFullPath(modelPath);
-        var model = new NGramModel(tokenizer, maxLength);
-
-        var validated = CorpusValidator.Validate(tokens, model.VocabSize, "Corpus");
+        var validated = CorpusValidator.Validate(tokens, tokenizer.VocabSize, "Corpus");
         int n = validated.Length;
         if (verbose)
         {
@@ -86,10 +84,9 @@ public sealed partial class NGramModel
         }
 
         var sa = new SuffixArray(validated);
-        ModelStorage.Save(fullPath, sa, model.Tokenizer, model.VocabSize, model.MaxLength);
+        ModelStorage.Save(fullPath, sa, tokenizer, tokenizer.VocabSize, maxLength);
 
-        model._sa = sa;
-        model._modelDir = fullPath;
+        var model = new NGramModel(tokenizer, maxLength, sa, fullPath);
 
         if (verbose)
         {
@@ -100,15 +97,11 @@ public sealed partial class NGramModel
         return model;
     }
 
-    public static NGramModel Load(string modelPath, ITokenizer? tokenizer = null, int? maxLength = null)
+    internal static NGramModel Load(string modelPath, ITokenizer? tokenizer = null, int? maxLength = null)
     {
         var (suffixArray, resolved, effectiveMaxLength, directory) = ModelStorage.Load(modelPath, tokenizer, maxLength);
-        return new NGramModel(resolved, effectiveMaxLength)
-        {
-            _sa = suffixArray,
-            _modelDir = directory,
-        };
+        return new NGramModel(resolved, effectiveMaxLength, suffixArray, directory);
     }
 
-    public static List<string> ListModels(string? modelsDir = null) => ModelStorage.ListModels(modelsDir);
+    internal static List<string> ListModels(string? modelsDir = null) => ModelStorage.ListModels(modelsDir);
 }
