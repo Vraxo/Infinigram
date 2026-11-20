@@ -13,7 +13,9 @@ global.json                         # Selects the Microsoft.Testing.Platform run
 src/Infinigram/
   Infinigram.csproj                 # net11.0 class library
   Infinigram.cs                     # Model: predict / continuations / generate / score / I/O
-  SuffixArray.cs                    # Suffix array
+  SuffixArray.cs                    # Suffix-array queries and public API
+  SuffixArrayBuilder.cs             # Suffix-array construction
+  SuffixArrayStorage.cs             # Binary index persistence
   LruCache.cs                       # Internal LRU cache
   ITokenizer.cs                     # Tokenizer interface
   ByteTokenizer.cs                  # UTF-8 byte tokenizer
@@ -75,7 +77,7 @@ Deliberate deviations (initial port):
 
 - **Construction** uses prefix doubling + radix sort — O(n log n) — instead of
   `pydivsufsort` (SA-IS, O(n)). Swap in SA-IS later; only
-  `SuffixArray.BuildSuffixArray` changes.
+  `SuffixArrayBuilder.Build` changes.
 - **Persistence format** is simple little-endian `int32` (`corpus.bin`,
   `suffix_array.bin`, `meta.json` with `version: 1`, `engine:
   "infinigram-csharp"`). Python `.npy` indexes are **not** readable yet.
