@@ -416,7 +416,7 @@ public sealed class SuffixArray
 /// </summary>
 internal sealed class LruCache<TKey, TValue> where TKey : notnull
 {
-    private readonly int _capacity;
+    private int _capacity;
     private readonly Dictionary<TKey, LinkedListNode<KeyValuePair<TKey, TValue>>> _map;
     private readonly LinkedList<KeyValuePair<TKey, TValue>> _order;
 
@@ -432,6 +432,25 @@ internal sealed class LruCache<TKey, TValue> where TKey : notnull
     }
 
     public int Count => _map.Count;
+
+    /// <summary>Current capacity (internal, for tests).</summary>
+    internal int Capacity => _capacity;
+
+    /// <summary>Resize the cache, evicting oldest entries to fit (internal, for tests).</summary>
+    internal void SetCapacity(int capacity)
+    {
+        if (capacity < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(capacity), "capacity must be at least 1");
+        }
+        _capacity = capacity;
+        while (_map.Count > _capacity)
+        {
+            var oldest = _order.First!;
+            _order.RemoveFirst();
+            _map.Remove(oldest.Value.Key);
+        }
+    }
 
     public bool TryGet(TKey key, out TValue? value)
     {

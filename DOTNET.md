@@ -9,6 +9,7 @@ no training loop, no neural weights.
 
 ```
 Infinigram.slnx                     # Solution (new XML format)
+global.json                         # Selects the Microsoft.Testing.Platform runner for `dotnet test`
 src/Infinigram/
   Infinigram.csproj                 # net11.0 class library
   Infinigram.cs                     # Model: predict / continuations / generate / score / I/O
@@ -16,6 +17,9 @@ src/Infinigram/
   Tokenizers.cs                     # ITokenizer, ByteTokenizer
   Sampling.cs                       # Temperature sampling, top-k / top-p filters
   CorpusUtils.cs                    # Document/JSONL corpus builders
+tests/Infinigram.Tests/
+  Infinigram.Tests.csproj           # net11.0 test app (xUnit v3 on Microsoft.Testing.Platform)
+  *Tests.cs                         # Port of Python/tests/ (assertions via AwesomeAssertions)
 ```
 
 ## Requirements & build
@@ -26,7 +30,12 @@ src/Infinigram/
 
 ```bash
 dotnet build
+dotnet test        # runs tests/Infinigram.Tests (xUnit v3 on Microsoft.Testing.Platform)
 ```
+
+The repo-root `global.json` selects the MTP runner for `dotnet test` (required
+on .NET 10+ SDKs; the old VSTest bridge is gone). Without it, run the test app
+directly: `dotnet run --project tests/Infinigram.Tests`.
 
 ## Quick example
 
@@ -73,25 +82,36 @@ Deliberate deviations (initial port):
 
 Not yet ported: chunked indexes, token-level dtype paths, tiktoken integration
 tests (port behind an optional dependency), the REST/CLI/REPL ideas in
-`Python/ARCHITECTURE.md`, and the xUnit test suite (`Python/tests/` is the
-reference for behavior).
+`Python/ARCHITECTURE.md`.
 
 ## Verification so far
 
 No .NET SDK was available in the development sandbox (network-restricted), so a
-real `dotnet build` still needs to happen on a machine with the .NET 11 SDK.
-What *has* been verified:
+real `dotnet build` / `dotnet test` still needs to happen on a machine with the
+.NET 11 SDK. What *has* been verified:
 
 - All sources parse cleanly (tree-sitter-c-sharp).
 - The construction and range-search algorithms were re-implemented in Python
   and fuzz-tested against brute force (3,000 random corpora/patterns).
 - The longest-match binary search and the continuation walk-down were
   fuzz-tested against brute force (500/300 random corpora).
+- The test suite (`tests/Infinigram.Tests/`) was written against the C# sources
+  and the AwesomeAssertions 9.6.0 public API (method names verified against the
+  release source), but not yet compiled or executed — expect minor nits on the
+  first `dotnet test`.
+
+The test suite ports `Python/tests/` (sampling, suffix array, tokenizers,
+corpus utils, UTF-8/documents, and the model suites: longest suffix, suffix
+matches, continuations, predict, predict-logprobs, update, edge cases,
+integration, GetToken, Generate, Score, cache limits/eviction). Assertions use
+AwesomeAssertions; xUnit uses the v3 Microsoft.Testing.Platform runner. Tests
+that exercise Python-only behaviors (mmap/chunked builds, `Infinigram.build`/
+`load` of `.npy` indexes, tiktoken) are intentionally omitted.
 
 ## Next steps
 
-1. `dotnet build` on a machine with the .NET 11 SDK; fix any compile nits.
-2. Port `Python/tests/` to an xUnit project; add it to `Infinigram.slnx`.
-3. mmap-backed indexes + chunked construction for multi-GB corpora.
-4. SA-IS construction; byte-level `uint8` fast path.
-5. Converter for Python-built `.npy` indexes (cross-language model sharing).
+1. `dotnet build` and `dotnet test` on a machine with the .NET 11 SDK; fix any
+   compile or behavioral nits in the test port.
+2. mmap-backed indexes + chunked construction for multi-GB corpora.
+3. SA-IS construction; byte-level `uint8` fast path.
+4. Converter for Python-built `.npy` indexes (cross-language model sharing).
