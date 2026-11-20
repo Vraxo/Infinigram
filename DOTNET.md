@@ -22,6 +22,9 @@ src/Infinigram/
   ByteTokenizer.cs                  # UTF-8 byte tokenizer
   Sampling.cs                       # Temperature sampling, top-k / top-p filters
   CorpusUtils.cs                    # Document/JSONL corpus builders
+src/Infinigram.Repl/
+  Infinigram.Repl.csproj            # Interactive console application
+  ReplSession.cs                    # REPL commands
 tests/Infinigram.Tests/
   Infinigram.Tests.csproj           # net11.0 test app (xUnit v3 on Microsoft.Testing.Platform)
   *Tests.cs                         # Port of Python/tests/ (assertions via AwesomeAssertions)
@@ -44,6 +47,24 @@ to `main` and every PR targeting `main`.
 The repo-root `global.json` selects the MTP runner for `dotnet test` (required
 on .NET 10+ SDKs; the old VSTest bridge is gone). Without it, run the test app
 directly: `dotnet run --project tests/Infinigram.Tests`.
+
+## Interactive REPL
+
+Run the .NET REPL with a UTF-8 corpus file or a previously saved .NET model:
+
+```bash
+dotnet run --project src/Infinigram.Repl -- --file path/to/corpus.txt
+dotnet run --project src/Infinigram.Repl -- --model path/to/model
+```
+
+You can also start without arguments and use `:text hello world`, `:open path/to/corpus.txt`,
+or `:load path/to/model`. Type `:help` for all commands. For example, `:count hello`,
+`:search hello`, and `:predict hello` query the corpus; `:generate hello` (or a plain
+line) generates a greedy continuation of up to 80 UTF-8 bytes. `:quit` or EOF exits.
+`:open` and `--file` read raw file bytes; search offsets and prediction IDs are bytes,
+not characters. Building an index can take time and memory for large files. The REPL
+loads existing .NET models but does not currently save new ones; use the library's
+`Build` or `BuildFromFile` API for persistence.
 
 ## Quick example
 
