@@ -1,6 +1,3 @@
-// Port of Python/tests/test_tokenizers.py (ByteTokenizer sections).
-// The tiktoken compatibility tests are skipped — no tiktoken package for .NET;
-// tokenizers must implement ITokenizer instead.
 using AwesomeAssertions;
 
 namespace Infinigram.Tests;
@@ -49,14 +46,12 @@ public class ByteTokenizerTests
     [Fact]
     public void EncodeMultibyteCodepoint()
     {
-        // "€" is E2 82 AC in UTF-8
         new ByteTokenizer().Encode("€").Should().Equal(new[] { 0xE2, 0x82, 0xAC });
     }
 
     [Fact]
     public void DecodeInvalidBytesReplaces()
     {
-        // Lone continuation byte is invalid UTF-8; default behavior replaces it.
         new ByteTokenizer().Decode(new List<int> { 0x80 }).Should().Be("\uFFFD");
     }
 

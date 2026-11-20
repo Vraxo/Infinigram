@@ -1,23 +1,11 @@
-// Corpus utilities for Infinigram.
-//
-// Helpers for building byte-level corpora from documents and JSONL files.
-// All functions here operate on bytes (ids 0..255); for token-level models,
-// encode text with your tokenizer and pass the ids to the model directly.
 
 using System.Text;
 using System.Text.Json;
 
 namespace Infinigram;
 
-/// <summary>
-/// Helpers for building byte-level corpora from documents and JSONL files.
-/// </summary>
 public static class CorpusUtils
 {
-    /// <summary>
-    /// Build a byte-level corpus from text documents, separated by a byte sequence
-    /// (default: double newline) to prevent spurious cross-document patterns.
-    /// </summary>
     public static List<int> BuildCorpusFromDocuments(
         IEnumerable<string> documents,
         byte[]? separator = null,
@@ -42,10 +30,6 @@ public static class CorpusUtils
         return corpus;
     }
 
-    /// <summary>
-    /// Build a byte-level corpus from pre-encoded documents. All token ids must be
-    /// in <c>[0, 255]</c>; otherwise an <see cref="ArgumentException"/> is thrown.
-    /// </summary>
     public static List<int> BuildCorpusFromDocuments(
         IEnumerable<IReadOnlyList<int>> documents,
         byte[]? separator = null)
@@ -80,7 +64,6 @@ public static class CorpusUtils
         return corpus;
     }
 
-    /// <summary>Iterate over the text content of a JSONL file, one JSON object per line.</summary>
     public static IEnumerable<string> IterJsonLines(
         string path,
         string textField = "text",
@@ -109,15 +92,6 @@ public static class CorpusUtils
         }
     }
 
-    /// <summary>
-    /// Build a byte-level corpus from a JSONL file.
-    /// </summary>
-    /// <example>
-    /// <code>
-    /// var corpus = CorpusUtils.BuildCorpusFromJsonLines("wiki.jsonl", maxDocuments: 1000);
-    /// using var model = Infinigram.Build(corpus, "wiki_model");
-    /// </code>
-    /// </example>
     public static List<int> BuildCorpusFromJsonLines(
         string path,
         string textField = "text",
@@ -137,7 +111,6 @@ public static class CorpusUtils
         return BuildCorpusFromDocuments(documents, separator, encoding);
     }
 
-    /// <summary>Save documents to a JSONL file, one <c>{ textField: ... }</c> object per line.</summary>
     public static void SaveCorpusToJsonLines(
         IEnumerable<string> documents,
         string path,

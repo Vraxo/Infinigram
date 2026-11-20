@@ -1,4 +1,3 @@
-// Port of Python/tests/test_sampling.py
 using AwesomeAssertions;
 
 namespace Infinigram.Tests;
@@ -185,7 +184,6 @@ public class TopPFilterTests
     {
         var probs = new Dictionary<int, double> { [65] = 0.5, [66] = 0.3, [67] = 0.15, [68] = 0.05 };
         var result = Sampling.TopPFilter(probs, p: 0.8);
-        // 0.5 + 0.3 = 0.8, so 65 and 66 are kept
         result.Should().ContainKey(65);
         result.Should().ContainKey(66);
     }

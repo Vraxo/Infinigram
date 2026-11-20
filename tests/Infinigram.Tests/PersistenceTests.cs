@@ -1,6 +1,3 @@
-// Persistent model (Infinigram.Build/Load/ListModels) round-trip tests.
-// Exercises the C# little-endian int32 format; Python's .npy indexes are not
-// readable by this engine and are intentionally not tested here.
 using AwesomeAssertions;
 
 namespace Infinigram.Tests;
@@ -90,7 +87,6 @@ public class PersistenceTests : IDisposable
         {
         }
 
-        // Simulate a Python-built (.npy, version 2) index marker.
         File.WriteAllText(Path.Combine(modelPath, "meta.json"), "{\"version\": 2, \"n\": 11}");
 
         Action act = () => Infinigram.Load(modelPath);
@@ -105,7 +101,6 @@ public class PersistenceTests : IDisposable
         {
         }
 
-        // Corrupt corpus.bin: header claims 3 ints, file holds fewer.
         File.WriteAllBytes(Path.Combine(modelPath, "corpus.bin"), new byte[] { 3, 0, 0, 0, 65, 66 });
 
         Action act = () => Infinigram.Load(modelPath);

@@ -1,4 +1,3 @@
-// Port of Python/tests/test_corpus_utils.py and Python/tests/test_utf8_and_documents.py.
 using System.Text.Json;
 using AwesomeAssertions;
 
@@ -52,7 +51,7 @@ public class BuildCorpusFromDocumentsTests
     [Fact]
     public void InvalidByteValueThrows()
     {
-        var docs = new[] { new List<int> { 256, 1, 2 } }; // 256 is not a byte
+        var docs = new[] { new List<int> { 256, 1, 2 } };
         Action act = () => CorpusUtils.BuildCorpusFromDocuments(docs);
         act.Should().Throw<ArgumentException>();
     }
@@ -180,7 +179,6 @@ public class SaveCorpusToJsonLinesTests
 
 public class ByteTokenizerModelRoundTripTests
 {
-    // From Python/tests/test_utf8_and_documents.py — tokenizer round-trips through the model.
 
     [Fact]
     public void RoundTripAscii()

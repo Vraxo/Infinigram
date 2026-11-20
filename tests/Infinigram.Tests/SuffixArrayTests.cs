@@ -1,8 +1,3 @@
-// Port of Python/tests/test_suffix_array.py (byte- and token-level sections)
-// and the binary-search comparison tests from Python/tests/test_infinigram.py.
-// The Python MmapSuffixArray / ChunkedMmapSuffixArray suites are not applicable
-// yet (no chunked indexes in the C# engine); Save/Load round-trips are covered
-// here and in PersistenceTests.
 using AwesomeAssertions;
 
 namespace Infinigram.Tests;
@@ -52,7 +47,6 @@ public class SuffixArrayBuildTests
 
         for (int i = 1; i < sa.Length; i++)
         {
-            // Suffixes must be in non-decreasing lexicographic order.
             var prev = Suffix(corpus, sa.Positions[i - 1]);
             var curr = Suffix(corpus, sa.Positions[i]);
             LexicographicCompare(prev, curr).Should().BeLessThanOrEqualTo(0);
@@ -142,7 +136,6 @@ public class SuffixArraySearchTests
     public void SearchWithLimitReturnsAtMostLimit()
     {
         var sa = new SuffixArray(TestData.B("ababab"));
-        // "ab" appears 3 times; limit 2 must cap it.
         sa.Search(TestData.B("ab"), limit: 2).Should().HaveCount(2);
     }
 
@@ -211,7 +204,7 @@ public class SuffixArrayGetContextTests
         var sa = new SuffixArray(TestData.Range(10, 20));
         var (before, after) = sa.GetContext(5, window: 3);
         before.Should().Equal(new[] { 12, 13, 14 });
-        after.Should().Equal(new[] { 15, 16, 17 }); // includes the token at position 5
+        after.Should().Equal(new[] { 15, 16, 17 });
     }
 
     [Fact]
@@ -290,7 +283,6 @@ public class SuffixArraySaveLoadTests : IDisposable
 
 public class SuffixArrayBinarySearchTests
 {
-    // Port of TestBytesComparisonInSuffixArray (Python test_infinigram.py).
 
     [Fact]
     public void ComparisonFindsExistingPattern()

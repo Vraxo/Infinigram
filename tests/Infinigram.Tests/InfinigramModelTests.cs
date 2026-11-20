@@ -1,10 +1,3 @@
-// Port of Python/tests/test_infinigram.py and the cache/limit tests.
-// Adaptations:
-//   - byte contexts are spelled TestData.B("...") (token-id lists)
-//   - GetToken/SuffixArray.GetToken raise ArgumentOutOfRangeException (not IndexError)
-//   - Python's private cache fields are exposed to this assembly via internal hooks
-//   - empty corpus raises ArgumentException (Python allowed either behavior)
-//   - unsupported features (chunked indexes) have no tests here yet
 using AwesomeAssertions;
 
 namespace Infinigram.Tests;
@@ -37,9 +30,9 @@ public class ModelInitializationTests
     }
 
     [Theory]
-    [InlineData(new[] { 256 })]     // too large
-    [InlineData(new[] { -1 })]      // negative
-    [InlineData(new[] { 0, 100, 300, 1000 })] // mixed
+    [InlineData(new[] { 256 })]
+    [InlineData(new[] { -1 })]
+    [InlineData(new[] { 0, 100, 300, 1000 })]
     public void InvalidBytesAreRejected(int[] corpus)
     {
         Action act = () => new Infinigram(corpus.ToList());
@@ -218,7 +211,7 @@ public class FindAllSuffixMatchesTests
         using var model = new Infinigram(TestData.B("abc").ToArray());
         var matches = model.FindAllSuffixMatches(TestData.B("xyzabc"));
 
-        matches.Should().HaveCount(3); // "abc", "bc", "c"
+        matches.Should().HaveCount(3);
         matches.Select(m => m.Length).Should().Equal(new[] { 3, 2, 1 });
     }
 
@@ -247,7 +240,7 @@ public class FindAllSuffixMatchesTests
         using var model = new Infinigram(corpus.ToArray());
 
         var matches = model.FindAllSuffixMatches(TestData.B("ab"));
-        matches.Should().HaveCount(2); // lengths 2 and 1
+        matches.Should().HaveCount(2);
 
         var length2 = matches.Single(m => m.Length == 2);
         var expectedCount = CountOccurrences(corpus, TestData.B("ab"));
@@ -429,7 +422,6 @@ public class ContinuationsTests
     {
         using var model = new Infinigram(new List<int> { 1, 2, 3, 4, 5 });
         var conts = model.Continuations(new List<int> { 4, 5 });
-        // Either no usable continuation (null) or the backoff found one — both are valid.
         (conts is null || conts.Count > 0).Should().BeTrue();
     }
 
@@ -646,7 +638,6 @@ public class ContinuationsTests
     [Fact]
     public void ContinuationCountsCoverEveryByteValue()
     {
-        // Two-byte pattern followed by each possible byte value, separated to avoid cross-boundary matches.
         var pattern = new List<int> { 253, 254 };
         var corpusParts = new List<int>();
         for (int b = 0; b < 256; b++)

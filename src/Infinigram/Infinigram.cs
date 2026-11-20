@@ -1,21 +1,3 @@
-// Infinigram: Variable-length n-gram language model using suffix arrays.
-//
-// The corpus IS the model — no gradient descent, no training loop. Index a
-// corpus once, then ask it for continuations of any context. Unlike traditional
-// n-gram models with a fixed order, Infinigram finds the longest matching
-// suffix in the corpus and uses its continuations for prediction.
-//
-// Status relative to the Python reference (Python/):
-//   - Ported: search, count, longest suffix, continuations, predict,
-//     predict-logprobs, generate, generate_text, score, update, caches.
-//   - Persistent models use a simple little-endian int32 format (corpus.bin,
-//     suffix_array.bin, meta.json). Python's .npy indexes are NOT readable yet.
-//   - Chunked (multi-GB) indexes are not supported yet.
-//   - Models are kept in memory rather than mmap-backed; for corpora that fit
-//     in RAM this is equivalent in behavior and usually faster.
-//
-// Note: instances are NOT thread-safe. Use one model per thread or external
-// synchronization.
 
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -24,18 +6,8 @@ using System.Text.Json.Nodes;
 
 namespace Infinigram;
 
-/// <summary>
-/// Variable-length n-gram language model over a suffix array.
-/// </summary>
-/// <example>
-/// <code>
-/// using var model = new Infinigram("the cat sat on the mat the cat ran");
-/// var probs = model.Predict(model.Tokenizer.Encode("the cat"));
-/// </code>
-/// </example>
 public sealed class Infinigram : IDisposable
 {
-    /// <summary>Default maximum occurrences sampled when counting continuations.</summary>
     public const int DefaultContinuationLimit = 10000;
 
     private const int DefaultCacheSize = 1000;
@@ -46,29 +18,22 @@ public sealed class Infinigram : IDisposable
 
     private static readonly JsonSerializerOptions JsonWriteOptions = new() { WriteIndented = true };
 
-    // Assigned by every constructing ctor before the instance escapes (CS8618: nulled until then).
     private SuffixArray _sa = null!;
     private readonly LruCache<ContextKey, Dictionary<int, int>?> _cache = new(DefaultCacheSize);
     private Dictionary<int, int>? _uniformCounts;
     private string? _modelDir;
     private bool _disposed;
 
-    /// <summary>The tokenizer associated with this model.</summary>
     public ITokenizer Tokenizer { get; private set; }
 
-    /// <summary>Size of the token vocabulary the model was built with.</summary>
     public int VocabSize { get; private set; }
 
-    /// <summary>Maximum suffix length to consider for predictions (null = unlimited).</summary>
     public int? MaxLength { get; }
 
-    /// <summary>Number of tokens in the corpus.</summary>
     public int N => _sa.Length;
 
-    /// <summary>Directory of the persistent model, or null for in-memory models.</summary>
     public string? ModelPath => _modelDir;
 
-    // === Construction ===
 
     private Infinigram(ITokenizer tokenizer, int? maxLength)
     {
@@ -77,10 +42,6 @@ public sealed class Infinigram : IDisposable
         MaxLength = maxLength;
     }
 
-    /// <summary>
-    /// Create a model from a pre-tokenized corpus of token ids.
-    /// </summary>
-    /// <exception cref="ArgumentException">The corpus is empty or contains ids outside <c>[0, VocabSize)</c>.</exception>
     public Infinigram(IReadOnlyList<int> corpus, ITokenizer? tokenizer = null, int? maxLength = null)
         : this(tokenizer ?? new ByteTokenizer(), maxLength)
     {
@@ -92,10 +53,6 @@ public sealed class Infinigram : IDisposable
         _sa = new SuffixArray(ValidateCorpus(corpus, "Corpus"));
     }
 
-    /// <summary>
-    /// Create a model from a raw byte corpus. Only valid for byte-level tokenizers
-    /// (vocab ≤ 256); for token-level models pass token ids instead.
-    /// </summary>
     public Infinigram(byte[] corpus, ITokenizer? tokenizer = null, int? maxLength = null)
         : this(tokenizer ?? new ByteTokenizer(), maxLength)
     {
@@ -114,10 +71,6 @@ public sealed class Infinigram : IDisposable
         _sa = new SuffixArray(ValidateCorpus(corpus.Select(b => (int)b).ToList(), "Corpus"));
     }
 
-    /// <summary>
-    /// Create a model from a text corpus. The text is encoded with the model's tokenizer
-    /// (UTF-8 bytes by default).
-    /// </summary>
     public Infinigram(string corpus, ITokenizer? tokenizer = null, int? maxLength = null)
         : this(tokenizer ?? new ByteTokenizer(), maxLength)
     {
@@ -129,9 +82,7 @@ public sealed class Infinigram : IDisposable
         _sa = new SuffixArray(Tokenizer.Encode(corpus));
     }
 
-    // === Persistent models ===
 
-    /// <summary>Build a persistent model from a text corpus.</summary>
     public static Infinigram Build(string corpus, string modelPath, ITokenizer? tokenizer = null,
         int? maxLength = null, bool verbose = true)
     {
@@ -141,7 +92,6 @@ public sealed class Infinigram : IDisposable
         return BuildFromTokens(tok.Encode(corpus).ToList(), modelPath, tok, maxLength, verbose);
     }
 
-    /// <summary>Build a persistent model from a byte corpus (byte-level tokenizers only).</summary>
     public static Infinigram Build(byte[] corpus, string modelPath, ITokenizer? tokenizer = null,
         int? maxLength = null, bool verbose = true)
     {
@@ -158,7 +108,6 @@ public sealed class Infinigram : IDisposable
         return BuildFromTokens(corpus.Select(b => (int)b).ToList(), modelPath, tok, maxLength, verbose);
     }
 
-    /// <summary>Build a persistent model from pre-tokenized ids.</summary>
     public static Infinigram Build(IReadOnlyList<int> corpus, string modelPath, ITokenizer? tokenizer = null,
         int? maxLength = null, bool verbose = true)
     {
@@ -167,10 +116,6 @@ public sealed class Infinigram : IDisposable
         return BuildFromTokens(corpus.ToList(), modelPath, tokenizer ?? new ByteTokenizer(), maxLength, verbose);
     }
 
-    /// <summary>
-    /// Build a persistent model from a corpus file. For byte-level tokenizers the file is
-    /// read as raw bytes; otherwise it is read as text and encoded with the tokenizer.
-    /// </summary>
     public static Infinigram BuildFromFile(string corpusFilePath, string modelPath, ITokenizer? tokenizer = null,
         int? maxLength = null, bool verbose = true)
     {
@@ -235,12 +180,6 @@ public sealed class Infinigram : IDisposable
         return model;
     }
 
-    /// <summary>
-    /// Load an existing model. Non-rooted paths that do not exist are resolved against
-    /// <c>~/.infinigram/models/</c>.
-    /// </summary>
-    /// <exception cref="FileNotFoundException">No model at the resolved path.</exception>
-    /// <exception cref="NotSupportedException">The index is not a C#-built Infinigram model (e.g. a Python .npy index).</exception>
     public static Infinigram Load(string modelPath, ITokenizer? tokenizer = null, int? maxLength = null)
     {
         ArgumentNullException.ThrowIfNull(modelPath);
@@ -326,7 +265,6 @@ public sealed class Infinigram : IDisposable
         return model;
     }
 
-    /// <summary>List model names in the models directory (default: ~/.infinigram/models).</summary>
     public static List<string> ListModels(string? modelsDir = null)
     {
         string dir = modelsDir ?? DefaultModelsDir;
@@ -378,7 +316,6 @@ public sealed class Infinigram : IDisposable
                 return supplied;
 
             case null:
-                // No tokenizer metadata: assume byte-level (forward compatibility).
                 return supplied ?? new ByteTokenizer();
 
             default:
@@ -438,7 +375,6 @@ public sealed class Infinigram : IDisposable
 
     private List<int> ApplyMaxLength(IReadOnlyList<int> context)
     {
-        // A max_length of 0 (or null) means unlimited, mirroring the Python truthiness check.
         if (MaxLength is int max && max > 0 && context.Count > max)
         {
             return context.Skip(context.Count - max).ToList();
@@ -452,9 +388,6 @@ public sealed class Infinigram : IDisposable
         return _sa.Search(pattern, limit);
     }
 
-    // Largest k such that context[^k:] occurs in the corpus, plus one example position.
-    // Monotonicity (longer suffix in corpus ⇒ every shorter suffix in corpus) makes the
-    // answer binary-searchable. Total work is O(m log n).
     private (int Length, int Position) LongestMatchLength(List<int> context)
     {
         if (context.Count == 0)
@@ -489,12 +422,7 @@ public sealed class Infinigram : IDisposable
         return (bestLength, bestPosition);
     }
 
-    // === Query methods ===
 
-    /// <summary>
-    /// All positions where <paramref name="pattern"/> occurs in the corpus.
-    /// </summary>
-    /// <param name="limit">Maximum number of results (null = all). Limiting significantly improves performance on large corpora.</param>
     public List<int> Search(IReadOnlyList<int> pattern, int? limit = null)
     {
         ThrowIfDisposed();
@@ -502,7 +430,6 @@ public sealed class Infinigram : IDisposable
         return _sa.Search(pattern, limit);
     }
 
-    /// <summary>Number of occurrences of <paramref name="pattern"/> in the corpus.</summary>
     public int Count(IReadOnlyList<int> pattern)
     {
         ThrowIfDisposed();
@@ -510,17 +437,12 @@ public sealed class Infinigram : IDisposable
         return _sa.Count(pattern);
     }
 
-    /// <summary>Return the token id at <paramref name="position"/>, with bounds checking.</summary>
     public int GetToken(int position)
     {
         ThrowIfDisposed();
         return _sa.GetToken(position);
     }
 
-    /// <summary>
-    /// Find the longest suffix of <paramref name="context"/> occurring in the corpus.
-    /// Returns <c>(-1, 0)</c> when no suffix matches.
-    /// </summary>
     public (int Position, int Length) LongestSuffix(IReadOnlyList<int> context)
     {
         ThrowIfDisposed();
@@ -535,10 +457,6 @@ public sealed class Infinigram : IDisposable
         return length == 0 ? (-1, 0) : (position, length);
     }
 
-    /// <summary>
-    /// Find all matching suffixes at different lengths, sorted by decreasing length.
-    /// For context "abc", searches "abc", "bc", "c" and returns all non-empty result sets.
-    /// </summary>
     public List<(int Length, List<int> Positions)> FindAllSuffixMatches(IReadOnlyList<int> context)
     {
         ThrowIfDisposed();
@@ -561,17 +479,6 @@ public sealed class Infinigram : IDisposable
         return matches;
     }
 
-    /// <summary>
-    /// Get continuation counts for the longest matching suffix of <paramref name="context"/>.
-    /// </summary>
-    /// <param name="limit">
-    /// Maximum occurrences to sample for counting continuations (default: 10000).
-    /// Prevents hanging on millions of matches for common patterns. Null counts all occurrences.
-    /// </param>
-    /// <returns>
-    /// Dictionary mapping next-token-id → count, or null when no suffix of the context
-    /// appears in the corpus. An empty context returns the uniform-counts dict.
-    /// </returns>
     public Dictionary<int, int>? Continuations(IReadOnlyList<int> context, int? limit = DefaultContinuationLimit)
     {
         ThrowIfDisposed();
@@ -596,8 +503,6 @@ public sealed class Infinigram : IDisposable
             return null;
         }
 
-        // Walk down lengths to handle the corner case where every match at the chosen
-        // length sits at the very end of the corpus (no continuation).
         for (int length = matchLength; length > 0; length--)
         {
             var positions = SearchSuffix(ctx, length, limit);
@@ -638,13 +543,11 @@ public sealed class Infinigram : IDisposable
         return new Dictionary<int, int>(_uniformCounts);
     }
 
-    /// <summary>Clear prediction caches (call after corpus updates).</summary>
     public void ClearCache()
     {
         _cache.Clear();
     }
 
-    // Test hooks: cache internals visible to the test assembly only.
     internal int ContinuationsCacheCount => _cache.Count;
 
     internal int ContinuationsCacheCapacity
@@ -653,14 +556,6 @@ public sealed class Infinigram : IDisposable
         set => _cache.SetCapacity(value);
     }
 
-    /// <summary>
-    /// Predict next-token probabilities.
-    /// </summary>
-    /// <returns>
-    /// Dictionary mapping token id → probability, or null when no suffix of the context
-    /// appears in the corpus. Callers (e.g. mixture-with-LLM grounding) should branch on
-    /// null to fall back to a baseline distribution.
-    /// </returns>
     public IReadOnlyDictionary<int, double>? Predict(IReadOnlyList<int> context, int topK = 50, double smoothing = 0.0)
     {
         ThrowIfDisposed();
@@ -708,7 +603,6 @@ public sealed class Infinigram : IDisposable
         return probs;
     }
 
-    /// <summary>Predict next-token log-probabilities. Returns null when no suffix matches.</summary>
     public IReadOnlyDictionary<int, double>? PredictLogprobs(IReadOnlyList<int> context, int topK = 50,
         double smoothing = 1e-10)
     {
@@ -725,17 +619,6 @@ public sealed class Infinigram : IDisposable
         return logprobs;
     }
 
-    /// <summary>
-    /// Generate tokens autoregressively.
-    /// </summary>
-    /// <param name="context">Starting token ids; null or empty for unconditioned generation.</param>
-    /// <param name="maxTokens">Maximum tokens to generate.</param>
-    /// <param name="temperature">Sampling temperature (0 = greedy, 1 = standard).</param>
-    /// <param name="topK">Number of top predictions to consider per step; null uses the full vocabulary.</param>
-    /// <param name="smoothing">Laplace smoothing parameter.</param>
-    /// <param name="stop">Optional stop sequences; generation halts and the stop tokens are stripped.</param>
-    /// <param name="rng">Optional randomness source (defaults to <see cref="Random.Shared"/>).</param>
-    /// <returns>The generated token ids (not including the original context).</returns>
     public List<int> Generate(
         IReadOnlyList<int>? context = null,
         int maxTokens = 100,
@@ -786,9 +669,6 @@ public sealed class Infinigram : IDisposable
         return generated;
     }
 
-    /// <summary>
-    /// Generate and decode to text via the model's tokenizer.
-    /// </summary>
     public string GenerateText(
         string context = "",
         int maxTokens = 100,
@@ -818,11 +698,6 @@ public sealed class Infinigram : IDisposable
         return Tokenizer.Decode(tokens);
     }
 
-    /// <summary>
-    /// Score a sequence by its total log-probability under the model.
-    /// Positions with no matching suffix are treated as uniform.
-    /// Returns a more-negative value for less likely sequences.
-    /// </summary>
     public double Score(IReadOnlyList<int> sequence, double smoothing = 1e-10)
     {
         ThrowIfDisposed();
@@ -837,7 +712,6 @@ public sealed class Infinigram : IDisposable
 
         for (int i = 1; i < sequence.Count; i++)
         {
-            // Note: no max_length truncation here beyond what Continuations applies.
             var context = sequence.Take(i).ToList();
             var counts = Continuations(context);
             if (counts is null)
@@ -863,10 +737,6 @@ public sealed class Infinigram : IDisposable
         return totalLp;
     }
 
-    /// <summary>
-    /// Append new tokens to the corpus and rebuild the index. O(n log n) — for
-    /// frequent updates, consider batching.
-    /// </summary>
     public void Update(IReadOnlyList<int> newTokens)
     {
         ThrowIfDisposed();
@@ -874,7 +744,6 @@ public sealed class Infinigram : IDisposable
         UpdateInternal(ValidateCorpus(newTokens, "new_tokens"));
     }
 
-    /// <summary>Append new bytes to the corpus (byte-level models only) and rebuild the index.</summary>
     public void Update(byte[] newTokens)
     {
         ThrowIfDisposed();
@@ -888,7 +757,6 @@ public sealed class Infinigram : IDisposable
         UpdateInternal(newTokens.Select(b => (int)b).ToArray());
     }
 
-    /// <summary>Append text (encoded with the model's tokenizer) and rebuild the index.</summary>
     public void Update(string newTokens)
     {
         ThrowIfDisposed();
@@ -913,17 +781,12 @@ public sealed class Infinigram : IDisposable
         ClearCache();
     }
 
-    /// <summary>
-    /// Get the tokens around <paramref name="position"/>: the window before and after,
-    /// clamped to the corpus boundaries.
-    /// </summary>
     public (List<int> Before, List<int> After) GetContext(int position, int window = 50)
     {
         ThrowIfDisposed();
         return _sa.GetContext(position, window);
     }
 
-    /// <summary>Get the corpus text around <paramref name="position"/>, decoded with the model's tokenizer.</summary>
     public string GetContextText(int position, int window = 50)
     {
         var (before, after) = GetContext(position, window);
@@ -933,7 +796,6 @@ public sealed class Infinigram : IDisposable
         return Tokenizer.Decode(slice);
     }
 
-    /// <summary>Release resources and clear caches. Model instances are otherwise GC-friendly.</summary>
     public void Dispose()
     {
         if (_disposed)
@@ -944,7 +806,6 @@ public sealed class Infinigram : IDisposable
         _cache.Clear();
     }
 
-    /// <inheritdoc />
     public override string ToString() =>
         ModelPath is null
             ? $"Infinigram(n={N:N0}, vocab={VocabSize})"

@@ -1,25 +1,10 @@
-// Sampling utilities for Infinigram.
-//
-// Shared helpers for autoregressive generation and nucleus/top-k filtering.
-// All functions operate on dictionaries mapping token id -> probability.
 
 namespace Infinigram;
 
-/// <summary>
-/// Sampling helpers operating on <c>token id → probability</c> distributions.
-/// </summary>
 public static class Sampling
 {
-    // Avoids log(0) in temperature scaling and smoothing fallbacks.
     private const double LogEpsilon = 1e-10;
 
-    /// <summary>
-    /// Sample a single token id from a probability distribution.
-    /// </summary>
-    /// <remarks>
-    /// <paramref name="temperature"/> of 0 is greedy (argmax); values above 1 flatten the
-    /// distribution, values below 1 sharpen it. Returns 0 for an empty distribution.
-    /// </remarks>
     public static int SampleFromDistribution(
         IReadOnlyDictionary<int, double> probs,
         double temperature = 1.0,
@@ -49,15 +34,6 @@ public static class Sampling
         return WeightedChoice(tokens, weights, rng ?? Random.Shared);
     }
 
-    /// <summary>
-    /// Sample <paramref name="k"/> token ids from a probability distribution.
-    /// </summary>
-    /// <remarks>
-    /// When <paramref name="temperature"/> is 0, returns the top-k tokens by probability
-    /// (greedy). When <paramref name="withReplacement"/> is false, samples without replacement
-    /// up to <c>min(k, probs.Count)</c>. Returns an empty list if <paramref name="probs"/> is
-    /// empty, <paramref name="k"/> is non-positive, or all weights are zero.
-    /// </remarks>
     public static List<int> SampleMultiple(
         IReadOnlyDictionary<int, double> probs,
         int k,
@@ -109,7 +85,6 @@ public static class Sampling
             }
             int idx = WeightedChoiceIndex(remainingWeights, random);
             resultList.Add(remainingTokens[idx]);
-            // Swap-and-pop: O(1) removal without shifting tail elements.
             int last = remainingTokens.Count - 1;
             remainingTokens[idx] = remainingTokens[last];
             remainingWeights[idx] = remainingWeights[last];
@@ -119,7 +94,6 @@ public static class Sampling
         return resultList;
     }
 
-    /// <summary>Keep only the k highest-probability tokens, renormalized to sum to 1.</summary>
     public static Dictionary<int, double> TopKFilter(IReadOnlyDictionary<int, double> probs, int k)
     {
         ArgumentNullException.ThrowIfNull(probs);
@@ -138,13 +112,6 @@ public static class Sampling
         return sorted.ToDictionary(kv => kv.Key, kv => kv.Value / total);
     }
 
-    /// <summary>
-    /// Nucleus (top-p) sampling filter.
-    /// </summary>
-    /// <remarks>
-    /// Keeps the smallest prefix of tokens (sorted by descending probability) whose cumulative
-    /// mass reaches <paramref name="p"/>, then renormalizes to sum to 1.
-    /// </remarks>
     public static Dictionary<int, double> TopPFilter(IReadOnlyDictionary<int, double> probs, double p)
     {
         ArgumentNullException.ThrowIfNull(probs);
@@ -198,7 +165,6 @@ public static class Sampling
             return (tokens, weights);
         }
 
-        // Log-domain with max-subtraction for numerical stability; yields p^(1/T).
         var logProbs = weights.Select(p => Math.Log(p + LogEpsilon) / temperature).ToList();
         double maxLog = logProbs.Max();
         for (int i = 0; i < weights.Count; i++)

@@ -1,6 +1,3 @@
-// Port of Python/tests/test_infinigram.py — TestResourceLifecycle (close/dispose).
-// The mmap/fd-leak variant is not applicable (models are in-memory);
-// repeated Update rebuilds are covered in InfinigramPredictTests.
 using AwesomeAssertions;
 
 namespace Infinigram.Tests;
@@ -12,7 +9,7 @@ public class ResourceLifecycleTests
     {
         var model = new Infinigram(TestData.B("hello world").ToArray());
         model.Dispose();
-        model.Dispose(); // Should not raise
+        model.Dispose();
     }
 
     [Fact]
@@ -63,7 +60,7 @@ public class ResourceLifecycleTests
             model.Update(new List<int> { 65 + (i % 26) });
         }
 
-        model.N.Should().Be(25); // 5 original + 20 appended
+        model.N.Should().Be(25);
         model.Predict(TestData.B("hello")).Should().NotBeNull();
     }
 
