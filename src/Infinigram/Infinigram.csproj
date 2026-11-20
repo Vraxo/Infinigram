@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <AssemblyName>Infinigram</AssemblyName>
+    <RootNamespace>Infinigram</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <Version>0.1.0</Version>
+    <Description>Variable-length n-gram language models using suffix arrays. Byte-level (UTF-8) by default; works with any tokenizer. O(m log n) pattern matching over a corpus that IS the model.</Description>
+    <Authors>Alex Towell</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>ngram;suffix-array;language-model;corpus;nlp</PackageTags>
+  </PropertyGroup>
+
+</Project>
