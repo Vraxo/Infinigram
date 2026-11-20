@@ -17,7 +17,9 @@ src/Infinigram/
   ModelStorage.cs                   # Model persistence and metadata
   ContinuationCounter.cs            # Continuation counts and cache
   ContextKey.cs                     # Continuation cache key
-  SuffixMatcher.cs                  # Longest-suffix matching
+  CorpusValidator.cs                # Token ID validation
+  CorpusAppender.cs                 # Append tokens and rebuild the index
+  SuffixMatcher.cs                  # Context limiting and suffix matching
   TokenPredictor.cs                 # Prediction probabilities
   TextGenerator.cs                  # Token and text generation
   SequenceScorer.cs                 # Sequence scoring

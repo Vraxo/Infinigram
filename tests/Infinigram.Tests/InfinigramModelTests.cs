@@ -48,6 +48,22 @@ public class ModelInitializationTests
     }
 
     [Fact]
+    public void InvalidUpdateDoesNotChangeCorpusOrCachedContinuations()
+    {
+        using var model = new NGramModel(TestData.B("abab"));
+        var context = TestData.B("a");
+        var before = model.Continuations(context);
+        int cacheCount = model.ContinuationsCacheCount;
+
+        Action update = () => model.Update(new[] { 256 }.ToList());
+        update.Should().Throw<ArgumentOutOfRangeException>();
+        model.N.Should().Be(4);
+        model.Count(context).Should().Be(2);
+        model.ContinuationsCacheCount.Should().Be(cacheCount);
+        model.Continuations(context).Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
     public void UpdateRejectsOutOfRangeTokens()
     {
         using var model = new NGramModel(new List<int> { 1, 2, 3 });

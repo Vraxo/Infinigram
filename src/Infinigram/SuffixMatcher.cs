@@ -2,6 +2,29 @@ namespace Infinigram;
 
 internal static class SuffixMatcher
 {
+    internal static List<int> LimitContext(IReadOnlyList<int> context, int? maxLength)
+    {
+        if (maxLength is int max && max > 0 && context.Count > max)
+        {
+            return context.Skip(context.Count - max).ToList();
+        }
+        return context.ToList();
+    }
+
+    internal static List<(int Length, List<int> Positions)> FindAll(SuffixArray suffixArray, List<int> context)
+    {
+        var matches = new List<(int Length, List<int> Positions)>();
+        for (int length = context.Count; length > 0; length--)
+        {
+            var positions = SearchSuffix(suffixArray, context, length, limit: null);
+            if (positions.Count > 0)
+            {
+                matches.Add((length, positions));
+            }
+        }
+        return matches;
+    }
+
     internal static List<int> SearchSuffix(SuffixArray suffixArray, List<int> context, int suffixLength, int? limit)
     {
         var pattern = context.GetRange(context.Count - suffixLength, suffixLength);

@@ -76,7 +76,7 @@ public sealed partial class NGramModel
         string fullPath = Path.GetFullPath(modelPath);
         var model = new NGramModel(tokenizer, maxLength);
 
-        var validated = model.ValidateCorpus(tokens, "Corpus");
+        var validated = CorpusValidator.Validate(tokens, model.VocabSize, "Corpus");
         int n = validated.Length;
         if (verbose)
         {
