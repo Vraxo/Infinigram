@@ -186,3 +186,42 @@ that exercise Python-only behaviors (mmap/chunked builds, `Infinigram.build`/
 2. mmap-backed indexes + chunked construction for multi-GB corpora.
 3. SA-IS construction; byte-level `uint8` fast path.
 4. Converter for Python-built `.npy` indexes (cross-language model sharing).
+
+## Benchmarks
+
+The BenchmarkDotNet suite measures the byte-tokenized .NET model using seeded,
+synthetic ASCII corpora of exactly 32 KiB and 1 MiB. It is not a representation
+of every real-world workload. Run it in Release mode on an otherwise idle machine:
+
+```bash
+dotnet run -c Release --project benchmarks/Infinigram.Benchmarks -- --list flat
+dotnet run -c Release --project benchmarks/Infinigram.Benchmarks -- --filter '*SearchBenchmarks*'
+dotnet run -c Release --project benchmarks/Infinigram.Benchmarks -- --filter '*'
+```
+
+For a quick setup/compilation check, append `--job Dry` to a filtered command;
+its results are not reliable performance measurements. BenchmarkDotNet reports
+runtime, OS, CPU, time, and managed allocations in `BenchmarkDotNet.Artifacts/`,
+which is ignored by Git. Use the same machine, .NET SDK, settings and corpus
+sizes when comparing runs. The suite uses a BenchmarkDotNet preview with .NET 11
+support.
+
+- **Build** indexes already-loaded bytes, including model construction and disposal,
+  but excludes file reading.
+- **Search** counts or returns up to 100 matches for frequent, rare, missing and
+  128-byte patterns. Setup verifies the patterns' expected match categories.
+- **Prediction** varies context length and `topK`. The cold case includes clearing
+  the continuation cache; the warm case primes it in setup. Both include result
+  creation. No smoothing is used.
+- **Generation** generates exactly 32 or 128 byte tokens greedily; setup verifies
+  the output length. Each operation includes clearing the cache. Divide output
+  bytes by the reported mean time to estimate bytes per second.
+- **Persistence** measures building and saving, loading, and updating and saving.
+  Updates append 17 bytes to a freshly built on-disk model outside the timed
+  operation. Build/save and update/save overwrite an existing index on later
+  iterations, and load may benefit from the OS file cache. Temporary data is
+  removed after each benchmark case. Record the disk and filesystem when comparing
+  results.
+
+The suite does not yet compare alternative tokenizers, model accuracy, peak
+working set, or uncached physical disk reads. It is not run in CI by default.
