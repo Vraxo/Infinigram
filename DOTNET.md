@@ -69,8 +69,10 @@ directory, then run:
 dotnet run --project src/Infinigram.Repl
 ```
 
-The REPL loads the file once at startup. Each line you enter is a prompt; it
-prints a greedy continuation of up to 80 UTF-8 bytes. The prompt and status use
+The REPL loads the file once at startup, showing a spinner while reading and
+indexing in an interactive terminal. Redirected output does not include the
+spinner. Each line you enter is a prompt; it prints a greedy continuation of up
+to 80 UTF-8 bytes. The prompt and status use
 Spectre.Console styling when the terminal supports it; redirected output remains
 plain text. End input with Ctrl+D (or Ctrl+Z then Enter on Windows) to exit.
 Indexing large files can take time and memory.

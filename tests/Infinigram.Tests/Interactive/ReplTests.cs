@@ -93,6 +93,20 @@ public class ReplTests
     }
 
     [Fact]
+    public void EmptyNormalizedCorpusFailsBeforePrompting()
+    {
+        using var temp = new TempDir();
+        string path = Path.Combine(temp.Path, "empty.txt");
+        File.WriteAllText(path, "");
+        var output = new StringWriter();
+        var error = new StringWriter();
+
+        ReplSession.Run(new StringReader(""), output, error, path, new TextNormalizationOptions()).Should().Be(1);
+        output.ToString().Should().BeEmpty();
+        error.ToString().Should().Contain("Could not load corpus");
+    }
+
+    [Fact]
     public void MissingOrEmptyFileFailsBeforePrompting()
     {
         using var temp = new TempDir();

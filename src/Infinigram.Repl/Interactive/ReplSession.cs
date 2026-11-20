@@ -14,10 +14,10 @@ public static class ReplSession
         Model model;
         try
         {
-            model = normalization is null
-                ? new Model(File.ReadAllBytes(corpusPath))
-                : new Model(TextNormalizer.Normalize(
-                    File.ReadAllText(corpusPath, new UTF8Encoding(false, true)), normalization));
+            model = new AnsiConsoleOutput(output).IsTerminal && console.Profile.Capabilities.Interactive
+                ? console.Status().Start("Reading corpus...", status =>
+                    LoadModel(corpusPath, normalization, () => status.Status = "Building suffix array..."))
+                : LoadModel(corpusPath, normalization);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
@@ -40,6 +40,21 @@ public static class ReplSession
             }
         }
         return 0;
+    }
+
+    private static Model LoadModel(string corpusPath, TextNormalizationOptions? normalization, Action? onIndexing = null)
+    {
+        if (normalization is null)
+        {
+            var bytes = File.ReadAllBytes(corpusPath);
+            onIndexing?.Invoke();
+            return new Model(bytes);
+        }
+
+        var text = File.ReadAllText(corpusPath, new UTF8Encoding(false, true));
+        text = TextNormalizer.Normalize(text, normalization);
+        onIndexing?.Invoke();
+        return new Model(text);
     }
 
     private static IAnsiConsole CreateConsole(TextWriter writer)
