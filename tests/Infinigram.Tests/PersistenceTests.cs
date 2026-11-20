@@ -92,6 +92,69 @@ public class PersistenceTests : IDisposable
     }
 
     [Fact]
+    public void MetadataAndMaxLengthRoundTripAfterUpdate()
+    {
+        var modelPath = _temp.SubDir("metadata");
+        using (var model = Infinigram.Build("abc", modelPath, maxLength: 2, verbose: false))
+        {
+            model.Update("de");
+        }
+
+        using var meta = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(modelPath, "meta.json")));
+        meta.RootElement.GetProperty("version").GetInt32().Should().Be(1);
+        meta.RootElement.GetProperty("engine").GetString().Should().Be("infinigram-csharp");
+        meta.RootElement.GetProperty("n").GetInt32().Should().Be(5);
+        meta.RootElement.GetProperty("vocab_size").GetInt32().Should().Be(256);
+        meta.RootElement.GetProperty("max_length").GetInt32().Should().Be(2);
+        meta.RootElement.GetProperty("tokenizer").GetProperty("kind").GetString().Should().Be("byte");
+
+        using var loaded = Infinigram.Load(modelPath);
+        using var overridden = Infinigram.Load(modelPath, maxLength: 4);
+        loaded.MaxLength.Should().Be(2);
+        overridden.MaxLength.Should().Be(4);
+        loaded.Count(TestData.B("de")).Should().Be(1);
+    }
+
+    [Fact]
+    public void CorruptMetadataAndMismatchedTokenCountAreRejected()
+    {
+        var modelPath = _temp.SubDir("corrupt-metadata");
+        using (Infinigram.Build("abc", modelPath, verbose: false)) { }
+        string metadata = Path.Combine(modelPath, "meta.json");
+        File.WriteAllText(metadata, "{");
+        Action malformed = () => Infinigram.Load(modelPath);
+        malformed.Should().Throw<InvalidDataException>();
+
+        File.WriteAllText(metadata, "{\"version\":1,\"n\":4}");
+        Action wrongLength = () => Infinigram.Load(modelPath);
+        wrongLength.Should().Throw<InvalidDataException>().WithMessage("*meta.json says n=4*");
+    }
+
+    [Fact]
+    public void CustomTokenizerMustBeSuppliedAndMatchVocabulary()
+    {
+        var modelPath = _temp.SubDir("custom");
+        var tokenizer = new TestTokenizer(256);
+        using (Infinigram.Build("abc", modelPath, tokenizer, verbose: false)) { }
+
+        Action missing = () => Infinigram.Load(modelPath);
+        missing.Should().Throw<InvalidOperationException>();
+        Action mismatch = () => Infinigram.Load(modelPath, new TestTokenizer(512));
+        mismatch.Should().Throw<InvalidDataException>();
+        using var loaded = Infinigram.Load(modelPath, tokenizer);
+        loaded.Tokenizer.Should().BeSameAs(tokenizer);
+        loaded.Count(TestData.B("abc")).Should().Be(1);
+    }
+
+    private sealed class TestTokenizer(int vocabularySize) : ITokenizer
+    {
+        private readonly ByteTokenizer _inner = new();
+        public int VocabSize => vocabularySize;
+        public IReadOnlyList<int> Encode(string text) => _inner.Encode(text);
+        public string Decode(IReadOnlyList<int> tokens) => _inner.Decode(tokens);
+    }
+
+    [Fact]
     public void LoadMissingModelThrows()
     {
         Action act = () => Infinigram.Load(Path.Combine(_temp.Path, "does-not-exist"));

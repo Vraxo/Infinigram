@@ -13,7 +13,8 @@ global.json                         # Selects the Microsoft.Testing.Platform run
 src/Infinigram/
   Infinigram.csproj                 # net11.0 class library
   Infinigram.cs                     # Model API and lifecycle
-  Infinigram.Persistence.cs         # Model build, load and metadata (partial model)
+  Infinigram.Persistence.cs         # Public model build and load methods
+  InfinigramStorage.cs              # Model persistence and metadata
   ContinuationCounter.cs            # Continuation counts and cache
   ContextKey.cs                     # Continuation cache key
   InfinigramSuffixMatcher.cs        # Longest-suffix matching
