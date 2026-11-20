@@ -10,6 +10,15 @@ namespace Infinigram.Tests;
 public class SuffixArrayBuildTests
 {
     [Fact]
+    public void BuildHandlesEmptySingleAndRepeatedTokens()
+    {
+        new SuffixArray(Array.Empty<int>()).Positions.Should().BeEmpty();
+        new SuffixArray(new[] { int.MinValue }).Positions.Should().Equal(0);
+        new SuffixArray(new[] { 7, 7, 7 }).Positions.Should().Equal(2, 1, 0);
+        new SuffixArray(new[] { int.MaxValue, int.MinValue }).Positions.Should().Equal(1, 0);
+    }
+
+    [Fact]
     public void BuildFromBytes()
     {
         var sa = new SuffixArray(TestData.B("the cat sat on the mat"));
@@ -245,6 +254,29 @@ public class SuffixArraySaveLoadTests : IDisposable
         reloaded.Search(TestData.B("the")).OrderBy(p => p)
             .Should().Equal(original.Search(TestData.B("the")).OrderBy(p => p));
         reloaded.Count(TestData.B("cat")).Should().Be(original.Count(TestData.B("cat")));
+    }
+
+    [Fact]
+    public void SaveUsesExistingLittleEndianFormat()
+    {
+        var dir = _temp.SubDir("format");
+        new SuffixArray(new[] { 256, -1 }).Save(dir);
+
+        File.ReadAllBytes(Path.Combine(dir, "corpus.bin")).Should().Equal(
+            new byte[] { 2, 0, 0, 0, 0, 1, 0, 0, 255, 255, 255, 255 });
+        File.ReadAllBytes(Path.Combine(dir, "suffix_array.bin")).Should().Equal(
+            new byte[] { 2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0 });
+    }
+
+    [Fact]
+    public void LoadRejectsMismatchedArrayLengths()
+    {
+        var dir = _temp.SubDir("mismatch");
+        new SuffixArray(new[] { 1, 2 }).Save(dir);
+        File.WriteAllBytes(Path.Combine(dir, "suffix_array.bin"), new byte[] { 0, 0, 0, 0 });
+
+        Action act = () => SuffixArray.Load(dir);
+        act.Should().Throw<InvalidDataException>();
     }
 
     [Fact]
