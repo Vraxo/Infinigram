@@ -40,6 +40,9 @@ public sealed class SuffixArray
     public int Count(IReadOnlyList<int> pattern) =>
         SuffixArraySearch.Count(_corpus, _sa, pattern);
 
+    internal List<int> SearchSampled(IReadOnlyList<int> pattern, int? limit) =>
+        SuffixArraySearch.SearchSampled(_corpus, _sa, pattern, limit);
+
     public (List<int> Before, List<int> After) GetContext(int position, int window = 10)
     {
         if (position < 0 || position >= _corpus.Length)
