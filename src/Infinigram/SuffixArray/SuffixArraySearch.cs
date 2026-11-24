@@ -31,6 +31,42 @@ internal static class SuffixArraySearch
         return positions;
     }
 
+    internal static List<int> SearchSampled(int[] corpus, int[] suffixArray, IReadOnlyList<int> pattern, int? limit)
+    {
+        ArgumentNullException.ThrowIfNull(pattern);
+        if (pattern.Count == 0 || limit is <= 0)
+        {
+            return new List<int>();
+        }
+
+        var p = ToArray(pattern);
+        var (left, right) = FindRange(corpus, suffixArray, p);
+        if (left >= right)
+        {
+            return new List<int>();
+        }
+
+        int count = right - left;
+        if (limit is not int sampleLimit || count <= sampleLimit)
+        {
+            var allPositions = new List<int>(count);
+            for (int i = left; i < right; i++)
+            {
+                allPositions.Add(suffixArray[i]);
+            }
+            return allPositions;
+        }
+
+        var positions = new List<int>(sampleLimit);
+        for (int i = 0; i < sampleLimit; i++)
+        {
+            long numerator = (2L * i + 1) * count;
+            int offset = (int)(numerator / (2L * sampleLimit));
+            positions.Add(suffixArray[left + offset]);
+        }
+        return positions;
+    }
+
     internal static int Count(int[] corpus, int[] suffixArray, IReadOnlyList<int> pattern)
     {
         ArgumentNullException.ThrowIfNull(pattern);
