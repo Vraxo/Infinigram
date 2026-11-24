@@ -2,7 +2,14 @@ namespace Infinigram;
 
 internal static class SuffixArraySearch
 {
-    internal static List<int> Search(int[] corpus, int[] suffixArray, IReadOnlyList<int> pattern, int? limit)
+    internal static List<int> Search(int[] corpus, int[] suffixArray, IReadOnlyList<int> pattern, int? limit) =>
+        SearchCore(corpus, suffixArray, pattern, limit, sample: false);
+
+    internal static List<int> SearchSampled(int[] corpus, int[] suffixArray, IReadOnlyList<int> pattern, int? limit) =>
+        SearchCore(corpus, suffixArray, pattern, limit, sample: true);
+
+    private static List<int> SearchCore(
+        int[] corpus, int[] suffixArray, IReadOnlyList<int> pattern, int? limit, bool sample)
     {
         ArgumentNullException.ThrowIfNull(pattern);
         if (pattern.Count == 0 || limit is <= 0)
@@ -17,17 +24,30 @@ internal static class SuffixArraySearch
             return new List<int>();
         }
 
-        int count = right - left;
-        if (limit is int lim && count > lim)
+        int matchCount = right - left;
+        int resultCount = limit is int max ? Math.Min(matchCount, max) : matchCount;
+        var positions = new List<int>(resultCount);
+
+        if (!sample || resultCount == matchCount)
         {
-            count = lim;
+            for (int i = 0; i < resultCount; i++)
+            {
+                positions.Add(suffixArray[left + i]);
+            }
+            return positions;
         }
 
-        var positions = new List<int>(count);
-        for (int i = 0; i < count; i++)
+        // Pick the midpoint of each equally sized rank interval. Suffix-array
+        // order groups matches by their following tokens, so taking the first
+        // N matches can systematically overrepresent the lexicographically
+        // smallest continuations.
+        for (int i = 0; i < resultCount; i++)
         {
-            positions.Add(suffixArray[left + i]);
+            long numerator = (2L * i + 1) * matchCount;
+            int offset = (int)(numerator / (2L * resultCount));
+            positions.Add(suffixArray[left + offset]);
         }
+
         return positions;
     }
 
