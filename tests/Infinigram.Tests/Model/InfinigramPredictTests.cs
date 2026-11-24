@@ -102,6 +102,24 @@ public class PredictTests
         Math.Abs(probs!.Values.Sum() - 1.0).Should().BeLessThanOrEqualTo(0.01);
     }
 
+
+    [Fact]
+    public void LimitedContinuationsSampleAcrossTheEntireMatchRange()
+    {
+        var corpus = Enumerable.Range(0, 200)
+            .SelectMany(token => Enumerable.Repeat(new[] { 255, token }, 100))
+            .SelectMany(pair => pair)
+            .ToList();
+        using var model = new NGramModel(corpus);
+
+        var counts = model.Continuations(new List<int> { 255 }, limit: 10000);
+
+        counts.Should().NotBeNull();
+        counts!.Keys.Should().BeEquivalentTo(Enumerable.Range(0, 200));
+        counts.Values.Should().OnlyContain(count => count == 50);
+        counts.Values.Sum().Should().Be(10000);
+    }
+
     [Fact]
     public void PredictUsesLimitedContinuationsAndCompletes()
     {
