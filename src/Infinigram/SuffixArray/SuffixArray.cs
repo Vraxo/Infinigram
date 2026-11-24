@@ -37,6 +37,9 @@ public sealed class SuffixArray
     public List<int> Search(IReadOnlyList<int> pattern, int? limit = null) =>
         SuffixArraySearch.Search(_corpus, _sa, pattern, limit);
 
+    internal List<int> SearchSampled(IReadOnlyList<int> pattern, int? limit) =>
+        SuffixArraySearch.SearchSampled(_corpus, _sa, pattern, limit);
+
     public int Count(IReadOnlyList<int> pattern) =>
         SuffixArraySearch.Count(_corpus, _sa, pattern);
 
@@ -76,5 +79,4 @@ public sealed class SuffixArray
         var (corpus, positions) = SuffixArrayStorage.Load(directory);
         return new SuffixArray(corpus, positions);
     }
-
 }
