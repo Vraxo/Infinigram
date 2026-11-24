@@ -36,7 +36,7 @@ internal sealed class ContinuationCounter
 
         for (int length = matchLength; length > 0; length--)
         {
-            var positions = SuffixMatcher.SearchSuffix(suffixArray, ctx, length, limit);
+            var positions = SuffixMatcher.SearchSuffixSampled(suffixArray, ctx, length, limit);
             Dictionary<int, int>? counts = null;
             foreach (int pos in positions)
             {
