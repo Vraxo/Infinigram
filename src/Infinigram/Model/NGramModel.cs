@@ -6,6 +6,7 @@ public sealed class NGramModel : IDisposable
 
     private SuffixArray _sa = null!;
     private readonly ContinuationCounter _continuations = new();
+    private readonly Dictionary<int, int> _unigramCounts = new();
     private string? _modelDir;
     private bool _disposed;
 
@@ -32,6 +33,7 @@ public sealed class NGramModel : IDisposable
     {
         _sa = suffixArray;
         _modelDir = modelDirectory;
+        CountUnigrams(_sa.Corpus);
     }
 
     public static NGramModel Build(string corpus, string modelPath, ITokenizer? tokenizer = null,
@@ -64,6 +66,7 @@ public sealed class NGramModel : IDisposable
             throw new ArgumentException("Corpus must not be empty.", nameof(corpus));
         }
         _sa = new SuffixArray(CorpusValidator.Validate(corpus, VocabSize, "Corpus"));
+        CountUnigrams(_sa.Corpus);
     }
 
     public NGramModel(byte[] corpus, ITokenizer? tokenizer = null, int? maxLength = null)
@@ -82,6 +85,7 @@ public sealed class NGramModel : IDisposable
             throw new ArgumentException("Corpus must not be empty.", nameof(corpus));
         }
         _sa = new SuffixArray(CorpusValidator.Validate(corpus.Select(b => (int)b).ToList(), VocabSize, "Corpus"));
+        CountUnigrams(_sa.Corpus);
     }
 
     public NGramModel(string corpus, ITokenizer? tokenizer = null, int? maxLength = null)
@@ -93,6 +97,7 @@ public sealed class NGramModel : IDisposable
             throw new ArgumentException("Corpus must not be empty.", nameof(corpus));
         }
         _sa = new SuffixArray(Tokenizer.Encode(corpus));
+        CountUnigrams(_sa.Corpus);
     }
 
 
@@ -146,6 +151,10 @@ public sealed class NGramModel : IDisposable
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(context);
+        if (context.Count == 0)
+        {
+            return new Dictionary<int, int>(_unigramCounts);
+        }
         return _continuations.Get(_sa, VocabSize, SuffixMatcher.LimitContext(context, MaxLength), limit);
     }
 
@@ -219,6 +228,10 @@ public sealed class NGramModel : IDisposable
     private void UpdateInternal(int[] newTokens)
     {
         _sa = CorpusAppender.Append(_sa, newTokens);
+        foreach (int token in newTokens)
+        {
+            _unigramCounts[token] = _unigramCounts.GetValueOrDefault(token) + 1;
+        }
 
         if (_modelDir is not null)
         {
@@ -240,6 +253,14 @@ public sealed class NGramModel : IDisposable
         slice.AddRange(before);
         slice.AddRange(after);
         return Tokenizer.Decode(slice);
+    }
+
+    private void CountUnigrams(IReadOnlyList<int> tokens)
+    {
+        foreach (int token in tokens)
+        {
+            _unigramCounts[token] = _unigramCounts.GetValueOrDefault(token) + 1;
+        }
     }
 
     public void Dispose()
