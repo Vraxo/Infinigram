@@ -167,6 +167,48 @@ public class PersistenceTests : IDisposable
         loaded.Count(TestData.B("abc")).Should().Be(1);
     }
 
+    [Fact]
+    public void BpeTokenizerIsSavedAndRestoredWithTheModel()
+    {
+        string phrase = "the quick brown fox jumps over the lazy dog. ";
+        string corpus = string.Concat(Enumerable.Repeat(phrase, 20));
+        var tokenizer = BpeTokenizer.Train(corpus, vocabSize: 320);
+        tokenizer.MergeCount.Should().BeGreaterThan(0);
+
+        string modelPath = _temp.SubDir("bpe-model");
+        var context = tokenizer.Encode("the quick ");
+
+        using var built = NGramModel.Build(corpus, modelPath, tokenizer, verbose: false);
+        built.Update("unseen words 🦊");
+
+        using var metadata = System.Text.Json.JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(modelPath, "meta.json")));
+        var tokenizerMetadata = metadata.RootElement.GetProperty("tokenizer");
+        tokenizerMetadata.GetProperty("kind").GetString().Should().Be("bpe");
+        tokenizerMetadata.GetProperty("merges").GetArrayLength().Should().Be(tokenizer.MergeCount);
+
+        using var loaded = NGramModel.Load(modelPath);
+        loaded.Tokenizer.Should().BeOfType<BpeTokenizer>();
+        loaded.Tokenizer.Should().Be(tokenizer);
+        loaded.N.Should().Be(built.N);
+        loaded.Predict(context, topK: 16).Should().BeEquivalentTo(built.Predict(context, topK: 16));
+        loaded.GenerateText("the quick ", maxTokens: 8, temperature: 0)
+            .Should().Be(built.GenerateText("the quick ", maxTokens: 8, temperature: 0));
+    }
+
+    [Fact]
+    public void LoadingBpeModelRejectsDifferentMergeRules()
+    {
+        string modelPath = _temp.SubDir("bpe-mismatch");
+        var tokenizer = BpeTokenizer.Train("hello hello hello world world", vocabSize: 300);
+        var different = BpeTokenizer.Train(new string('z', 200), vocabSize: 300);
+
+        using (NGramModel.Build("hello hello hello world world", modelPath, tokenizer, verbose: false)) { }
+
+        Action act = () => NGramModel.Load(modelPath, different);
+        act.Should().Throw<ArgumentException>().WithMessage("*different BPE merges*");
+    }
+
     private sealed class TestTokenizer(int vocabularySize) : ITokenizer
     {
         private readonly ByteTokenizer _inner = new();
