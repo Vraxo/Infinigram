@@ -21,14 +21,16 @@ public static class ReplSession
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
-            errorConsole.Markup("[red]Could not load corpus[/]");
+            if (IsTerminal(error)) errorConsole.Markup("[red]Could not load corpus[/]");
+            else error.Write("Could not load corpus");
             error.WriteLine($" '{corpusPath}': {ex.Message}");
             return 1;
         }
 
         using (model)
         {
-            console.MarkupLine("[grey]Enter a prompt to generate a continuation. End input to exit.[/]");
+            if (IsTerminal(output)) console.MarkupLine("[grey]Enter a prompt to generate a continuation. End input to exit.[/]");
+            else output.WriteLine("Enter a prompt to generate a continuation. End input to exit.");
             while (true)
             {
                 console.Markup("[bold cyan]infinigram> [/]");
