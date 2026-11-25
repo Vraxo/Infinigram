@@ -61,10 +61,15 @@ public class PredictTests
     }
 
     [Fact]
-    public void PredictNoMatchReturnsNull()
+    public void PredictNoMatchFallsBackToUnigrams()
     {
         using var model = new NGramModel(new List<int> { 1, 2, 3 });
-        model.Predict(new List<int> { 99, 98 }).Should().BeNull();
+        var probabilities = model.Predict(new List<int> { 99, 98 }, topK: 256);
+
+        probabilities.Should().NotBeNull();
+        probabilities!.Should().ContainKey(1);
+        probabilities.Should().ContainKey(2);
+        probabilities.Should().ContainKey(3);
     }
 
     [Fact]
@@ -126,10 +131,16 @@ public class PredictLogprobsTests
     }
 
     [Fact]
-    public void LogprobsAreNullWhenNoMatch()
+    public void LogprobsUseUnigramFallbackWhenContextHasNoMatch()
     {
         using var model = new NGramModel(TestData.B("abc").ToArray());
-        model.PredictLogprobs(new List<int> { 200, 201 }).Should().BeNull();
+        var logprobs = model.PredictLogprobs(new List<int> { 200, 201 }, topK: 256);
+
+        logprobs.Should().NotBeNull();
+        logprobs!.Should().ContainKey((int)'a');
+        logprobs.Should().ContainKey((int)'b');
+        logprobs.Should().ContainKey((int)'c');
+        logprobs.Values.Should().OnlyContain(value => value <= 0);
     }
 }
 
@@ -471,5 +482,141 @@ public class ScoreTests
         var shortScore = model.Score(TestData.B("abc"));
         var longScore = model.Score(TestData.B("abcdefgh"));
         longScore.Should().BeLessThan(shortScore);
+    }
+}
+
+
+public class ContinuationSamplingTests
+{
+    [Fact]
+    public void ContinuationLimitSamplesAcrossTheEntireSuffixRange()
+    {
+        const int occurrencesPerContinuation = NGramModel.DefaultContinuationLimit;
+        var corpus = new int[occurrencesPerContinuation * 2 * 2];
+
+        for (int i = 0; i < occurrencesPerContinuation; i++)
+        {
+            corpus[i * 2] = 0;
+            corpus[i * 2 + 1] = 1;
+        }
+
+        for (int i = 0; i < occurrencesPerContinuation; i++)
+        {
+            int offset = (occurrencesPerContinuation + i) * 2;
+            corpus[offset] = 0;
+            corpus[offset + 1] = 2;
+        }
+
+        using var model = new NGramModel(corpus);
+        var continuations = model.Continuations(new[] { 0 });
+
+        continuations.Should().NotBeNull();
+        continuations!.Should().ContainKey(1);
+        continuations.Should().ContainKey(2);
+        continuations[1].Should().Be(occurrencesPerContinuation / 2);
+        continuations[2].Should().Be(occurrencesPerContinuation / 2);
+        continuations.Values.Sum().Should().Be(NGramModel.DefaultContinuationLimit);
+    }
+}
+
+
+public class ConfidenceAwareBackoffTests
+{
+    [Fact]
+    public void SparseContextBacksOffToBetterSupportedShorterContext()
+    {
+        var corpus = new List<int> { 1, 2, 7 };
+        for (int i = 0; i < 20; i++)
+        {
+            corpus.AddRange(new[] { 4, 2, 8 });
+        }
+
+        using var model = new NGramModel(corpus);
+        var probabilities = model.Predict(new[] { 1, 2 }, topK: 256);
+
+        probabilities.Should().NotBeNull();
+        probabilities![8].Should().BeGreaterThan(probabilities[7]);
+    }
+
+    [Fact]
+    public void StronglySupportedContextKeepsItsSpecificDistribution()
+    {
+        var corpus = new List<int>();
+        for (int i = 0; i < 100; i++)
+        {
+            corpus.AddRange(new[] { 1, 2, 7 });
+            corpus.AddRange(new[] { 4, 2, 8 });
+        }
+
+        using var model = new NGramModel(corpus);
+        var probabilities = model.Predict(new[] { 1, 2 }, topK: 256);
+
+        probabilities.Should().NotBeNull();
+        probabilities!.Should().ContainKey(7);
+        probabilities.Should().NotContainKey(8);
+    }
+
+    [Fact]
+    public void SequenceScoringUsesConfidenceAwareBackoff()
+    {
+        var corpus = new List<int> { 1, 2, 7 };
+        for (int i = 0; i < 20; i++)
+        {
+            corpus.AddRange(new[] { 4, 2, 8 });
+        }
+
+        using var model = new NGramModel(corpus);
+
+        model.Score(new[] { 1, 2, 8 }).Should().BeGreaterThan(model.Score(new[] { 1, 2, 7 }));
+    }
+}
+
+
+public class UnigramDistributionTests
+{
+    [Fact]
+    public void EmptyContextReflectsCorpusTokenFrequencies()
+    {
+        using var model = new NGramModel(new[] { 1, 1, 1, 1, 2, 2, 3 });
+
+        var probabilities = model.Predict(Array.Empty<int>(), topK: 256);
+
+        probabilities.Should().NotBeNull();
+        probabilities![1].Should().BeApproximately(4.0 / 7.0, 1e-10);
+        probabilities[2].Should().BeApproximately(2.0 / 7.0, 1e-10);
+        probabilities[3].Should().BeApproximately(1.0 / 7.0, 1e-10);
+    }
+
+    [Fact]
+    public void UnseenContextFallsBackToUnigramDistribution()
+    {
+        using var model = new NGramModel(new[] { 1, 1, 1, 1, 2, 2, 3 });
+
+        var probabilities = model.Predict(new[] { 99, 98 }, topK: 256);
+
+        probabilities.Should().NotBeNull();
+        probabilities![1].Should().BeGreaterThan(probabilities[2]);
+        probabilities[2].Should().BeGreaterThan(probabilities[3]);
+    }
+
+    [Fact]
+    public void UpdatingCorpusUpdatesUnigramDistribution()
+    {
+        using var model = new NGramModel(new[] { 1, 2, 2 });
+        model.Update(new[] { 1, 1, 1 });
+
+        var probabilities = model.Predict(Array.Empty<int>(), topK: 256);
+
+        probabilities.Should().NotBeNull();
+        probabilities![1].Should().BeApproximately(4.0 / 6.0, 1e-10);
+        probabilities[2].Should().BeApproximately(2.0 / 6.0, 1e-10);
+    }
+
+    [Fact]
+    public void SequenceScoringUsesUnigramProbabilityForFirstToken()
+    {
+        using var model = new NGramModel(new[] { 1, 1, 1, 1, 2, 2, 3 });
+
+        model.Score(new[] { 1 }).Should().BeGreaterThan(model.Score(new[] { 3 }));
     }
 }

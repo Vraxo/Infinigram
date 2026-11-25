@@ -77,7 +77,8 @@ public static class Sampling
         var resultList = new List<int>();
         var remainingTokens = new List<int>(tokens);
         var remainingWeights = new List<double>(weights);
-        for (int i = 0; i < Math.Min(k, remainingTokens.Count); i++)
+        int sampleCount = Math.Min(k, remainingTokens.Count);
+        for (int i = 0; i < sampleCount; i++)
         {
             if (remainingWeights.Sum() <= 0.0)
             {

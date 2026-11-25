@@ -31,6 +31,13 @@ internal static class SuffixMatcher
         return suffixArray.Search(pattern, limit);
     }
 
+    internal static List<int> SearchSuffixSampled(
+        SuffixArray suffixArray, List<int> context, int suffixLength, int? limit)
+    {
+        var pattern = context.GetRange(context.Count - suffixLength, suffixLength);
+        return suffixArray.SearchSampled(pattern, limit);
+    }
+
     internal static (int Length, int Position) LongestMatchLength(SuffixArray suffixArray, List<int> context)
     {
         if (context.Count == 0)

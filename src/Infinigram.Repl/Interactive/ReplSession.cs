@@ -14,24 +14,27 @@ public static class ReplSession
         Model model;
         try
         {
-            model = new AnsiConsoleOutput(output).IsTerminal && console.Profile.Capabilities.Interactive
+            model = IsTerminal(output) && console.Profile.Capabilities.Interactive
                 ? console.Status().Start("Reading corpus...", status =>
                     LoadModel(corpusPath, normalization, () => status.Status = "Building suffix array..."))
                 : LoadModel(corpusPath, normalization);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
-            errorConsole.Markup("[red]Could not load corpus[/]");
+            if (IsTerminal(error)) errorConsole.Markup("[red]Could not load corpus[/]");
+            else error.Write("Could not load corpus");
             error.WriteLine($" '{corpusPath}': {ex.Message}");
             return 1;
         }
 
         using (model)
         {
-            console.MarkupLine("[grey]Enter a prompt to generate a continuation. End input to exit.[/]");
+            if (IsTerminal(output)) console.MarkupLine("[grey]Enter a prompt to generate a continuation. End input to exit.[/]");
+            else output.WriteLine("Enter a prompt to generate a continuation. End input to exit.");
             while (true)
             {
-                console.Markup("[bold cyan]infinigram> [/]");
+                if (IsTerminal(output)) console.Markup("[bold cyan]infinigram> [/]");
+                else output.Write("infinigram> ");
                 output.Flush();
                 string? prompt = input.ReadLine();
                 if (prompt is null) break;
@@ -63,7 +66,22 @@ public static class ReplSession
         return AnsiConsole.Create(new AnsiConsoleSettings
         {
             Out = destination,
-            Ansi = destination.IsTerminal ? AnsiSupport.Detect : AnsiSupport.No,
+            Ansi = IsTerminal(writer) ? AnsiSupport.Detect : AnsiSupport.No,
         });
+    }
+
+    private static bool IsTerminal(TextWriter writer)
+    {
+        if (ReferenceEquals(writer, Console.Out))
+        {
+            return !Console.IsOutputRedirected && new AnsiConsoleOutput(writer).IsTerminal;
+        }
+
+        if (ReferenceEquals(writer, Console.Error))
+        {
+            return !Console.IsErrorRedirected && new AnsiConsoleOutput(writer).IsTerminal;
+        }
+
+        return false;
     }
 }
