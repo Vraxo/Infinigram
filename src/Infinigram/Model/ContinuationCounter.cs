@@ -3,7 +3,6 @@ namespace Infinigram;
 internal sealed class ContinuationCounter
 {
     private readonly LruCache<ContextKey, Dictionary<int, int>?> _cache = new(1000);
-    private Dictionary<int, int>? _uniformCounts;
 
     internal int Count => _cache.Count;
     internal int Capacity
@@ -16,11 +15,6 @@ internal sealed class ContinuationCounter
 
     internal Dictionary<int, int>? Get(SuffixArray suffixArray, int vocabSize, List<int> ctx, int? limit)
     {
-        if (ctx.Count == 0)
-        {
-            return UniformCounts(vocabSize);
-        }
-
         var cacheKey = new ContextKey(ctx, limit);
         if (_cache.TryGet(cacheKey, out var cached))
         {
@@ -61,16 +55,4 @@ internal sealed class ContinuationCounter
         return null;
     }
 
-    private Dictionary<int, int> UniformCounts(int vocabSize)
-    {
-        if (_uniformCounts is null)
-        {
-            _uniformCounts = new Dictionary<int, int>(vocabSize);
-            for (int t = 0; t < vocabSize; t++)
-            {
-                _uniformCounts[t] = 1;
-            }
-        }
-        return new Dictionary<int, int>(_uniformCounts);
-    }
 }
