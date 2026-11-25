@@ -61,10 +61,13 @@ public class PredictTests
     }
 
     [Fact]
-    public void PredictNoMatchReturnsNull()
+    public void PredictNoMatchFallsBackToUnigrams()
     {
         using var model = new NGramModel(new List<int> { 1, 2, 3 });
-        model.Predict(new List<int> { 99, 98 }).Should().BeNull();
+        var probabilities = model.Predict(new List<int> { 99, 98 }, topK: 256);
+
+        probabilities.Should().NotBeNull();
+        probabilities!.Should().ContainKeys(1, 2, 3);
     }
 
     [Fact]
@@ -126,10 +129,14 @@ public class PredictLogprobsTests
     }
 
     [Fact]
-    public void LogprobsAreNullWhenNoMatch()
+    public void LogprobsUseUnigramFallbackWhenContextHasNoMatch()
     {
         using var model = new NGramModel(TestData.B("abc").ToArray());
-        model.PredictLogprobs(new List<int> { 200, 201 }).Should().BeNull();
+        var logprobs = model.PredictLogprobs(new List<int> { 200, 201 }, topK: 256);
+
+        logprobs.Should().NotBeNull();
+        logprobs!.Should().ContainKeys((int)'a', (int)'b', (int)'c');
+        logprobs.Values.Should().OnlyContain(value => value <= 0);
     }
 }
 
