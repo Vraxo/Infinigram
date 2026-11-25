@@ -30,6 +30,7 @@ src/Infinigram/
   LruCache.cs                       # Internal LRU cache
   ITokenizer.cs                     # Tokenizer interface
   ByteTokenizer.cs                  # UTF-8 byte tokenizer
+  BpeTokenizer.cs                   # Trainable byte-pair tokenizer with byte fallback
   Sampling.cs                       # Temperature sampling, top-k / top-p filters
   CorpusUtils.cs                    # Document/JSONL corpus builders
   TextNormalizer.cs                 # Optional text cleanup
@@ -129,13 +130,33 @@ NGramModel.Build("The quick brown fox jumps over the lazy dog.", "my_model");
 using var model = NGramModel.Load("my_model");      // or a bare name under ~/.infinigram/models
 ```
 
+## Tokenizers
+
+The default `ByteTokenizer` maps UTF-8 input to byte IDs (0–255). For a
+smaller token sequence on a domain-specific corpus, train a byte-pair tokenizer:
+
+```csharp
+string corpus = File.ReadAllText("corpus.txt");
+var tokenizer = BpeTokenizer.Train(corpus, vocabSize: 4096, minFrequency: 2);
+
+using var model = NGramModel.Build(corpus, "my_subword_model", tokenizer);
+```
+
+The requested BPE vocabulary size includes the 256 byte fallback tokens, so
+unseen words and arbitrary UTF-8 text remain encodable. Use
+`model.Tokenizer.Encode(...)` for prompts and updates; token IDs from different
+BPE vocabularies are not interchangeable. The merge rules are saved with the
+model, so `NGramModel.Load("my_subword_model")` restores the matching tokenizer
+without a separate tokenizer argument. Custom `ITokenizer` implementations
+remain supported, but their configuration is the caller's responsibility.
+
 ## Status vs. the Python reference
 
 Ported and available: suffix-array search/count, longest suffix, continuations
 (with LRU cache), predict / predict-logprobs, generation (greedy, temperature,
 top-k, stop sequences), sequence scoring, model persistence
 (`Build`/`BuildFromFile`/`Load`/`ListModels`), `Update` (append + rebuild),
-LRU continuations cache, uniform-prior fallbacks.
+LRU continuations cache, corpus-frequency unigram fallback.
 
 Deliberate deviations (initial port):
 
@@ -148,8 +169,11 @@ Deliberate deviations (initial port):
 - **No chunked/mmap indexes** for >RAM corpora; models are held in memory.
 - **Byte-level corpora** are stored as `int[]` (ids 0–255), not `uint8[]` —
   the `memcmp` fast path is a future optimization.
-- Tokenizers beyond `ByteTokenizer`: implement `ITokenizer`; persisted as
-  `custom` and must be supplied again at `Load` time (same spirit as Python).
+- `BpeTokenizer` provides deterministic byte-level BPE with all 256 UTF-8
+  bytes retained as fallback tokens. Its learned merge rules are saved in model
+  metadata and restored automatically by `NGramModel.Load`.
+- Other custom tokenizers can still implement `ITokenizer`; they are persisted
+  as `custom` and must be supplied again at `Load` time.
 
 Not yet ported: chunked indexes, token-level dtype paths, tiktoken integration
 tests (port behind an optional dependency), the REST/CLI/REPL ideas in

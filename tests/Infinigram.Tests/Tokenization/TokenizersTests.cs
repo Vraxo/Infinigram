@@ -1,3 +1,4 @@
+using System.Text;
 using AwesomeAssertions;
 
 namespace Infinigram.Tests;
@@ -79,5 +80,74 @@ public class ByteTokenizerTests
     public void ToStringContainsTypeName()
     {
         new ByteTokenizer().ToString().Should().Contain("ByteTokenizer");
+    }
+}
+
+
+public class BpeTokenizerTests
+{
+    [Fact]
+    public void LearnsMergesThatCompressRepeatedText()
+    {
+        const string corpus = "abcabcabcabc";
+        var tokenizer = BpeTokenizer.Train(corpus, vocabSize: 259, minFrequency: 2);
+
+        tokenizer.MergeCount.Should().BeGreaterThan(0);
+        tokenizer.Encode(corpus).Count.Should().BeLessThan(corpus.Length);
+        tokenizer.Decode(tokenizer.Encode(corpus)).Should().Be(corpus);
+    }
+
+    [Theory]
+    [InlineData("café 世界 🦊")]
+    [InlineData("unseen words and punctuation!?")]
+    [InlineData("")]
+    public void RoundTripsKnownAndUnseenUtf8(string text)
+    {
+        var tokenizer = BpeTokenizer.Train(
+            "hello world hello world. hello there!", vocabSize: 300);
+
+        tokenizer.Decode(tokenizer.Encode(text)).Should().Be(text);
+    }
+
+    [Fact]
+    public void TrainingIsDeterministic()
+    {
+        const string corpus = "the quick brown fox jumps over the lazy dog. ";
+        var first = BpeTokenizer.Train(corpus, vocabSize: 300);
+        var second = BpeTokenizer.Train(corpus, vocabSize: 300);
+
+        first.Should().Be(second);
+        first.Encode(corpus).Should().Equal(second.Encode(corpus));
+    }
+
+    [Fact]
+    public void VocabularyAlwaysIncludesEveryByte()
+    {
+        var tokenizer = BpeTokenizer.Train("abcabcabc", vocabSize: 256);
+
+        tokenizer.VocabSize.Should().Be(256);
+        tokenizer.Decode(Enumerable.Range(0, 256).ToArray())
+            .Should().Be(Encoding.UTF8.GetString(Enumerable.Range(0, 256).Select(i => (byte)i).ToArray()));
+    }
+
+    [Fact]
+    public void DecodeRejectsTokenOutsideVocabulary()
+    {
+        var tokenizer = BpeTokenizer.Train("abcabcabc", vocabSize: 256);
+
+        Action act = () => tokenizer.Decode(new[] { 256 });
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void TrainingRejectsInvalidArguments()
+    {
+        Action tooSmall = () => BpeTokenizer.Train("text", vocabSize: 255);
+        Action empty = () => BpeTokenizer.Train("");
+        Action invalidFrequency = () => BpeTokenizer.Train("text", minFrequency: 0);
+
+        tooSmall.Should().Throw<ArgumentOutOfRangeException>();
+        empty.Should().Throw<ArgumentException>();
+        invalidFrequency.Should().Throw<ArgumentOutOfRangeException>();
     }
 }
