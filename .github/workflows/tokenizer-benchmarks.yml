@@ -1,0 +1,44 @@
+name: Tokenizer benchmarks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "benchmarks/**"
+      - "src/**"
+      - ".github/workflows/tokenizer-benchmarks.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tokenizer-benchmarks:
+    name: Byte vs BPE
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 11.0.x
+          cache: true
+          cache-dependency-path: "**/*.csproj"
+
+      - name: Run tokenizer benchmarks
+        run: >-
+          dotnet run --configuration Release
+          --project benchmarks/Infinigram.Benchmarks/Infinigram.Benchmarks.csproj
+          --
+          --filter "*TokenizerBenchmarks*"
+          --artifacts ./BenchmarkDotNet.Artifacts
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tokenizer-benchmark-results
+          path: BenchmarkDotNet.Artifacts
+          if-no-files-found: warn
+          retention-days: 30
