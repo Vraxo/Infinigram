@@ -122,8 +122,10 @@ internal static class ModelStorage
     {
         string? kind = null;
         string? customName = null;
+        JsonObject? tokenizerConfig = null;
         if (meta.TryGetPropertyValue("tokenizer", out var tokenizerNode) && tokenizerNode is JsonObject tokConfig)
         {
+            tokenizerConfig = tokConfig;
             kind = tokConfig.TryGetPropertyValue("kind", out var kindNode) ? kindNode?.GetValue<string>() : null;
             if (tokConfig.TryGetPropertyValue("name", out var nameNode))
             {
@@ -141,6 +143,55 @@ internal static class ModelStorage
                         "tokenizer was supplied. Pass the matching tokenizer or omit tokenizer:.");
                 }
                 return new ByteTokenizer();
+
+            case "bpe":
+                if (tokenizerConfig?["merges"] is not JsonArray mergeNodes)
+                {
+                    throw new InvalidDataException(
+                        $"Model at {metaPath} has an invalid BPE tokenizer configuration (missing merges).");
+                }
+
+                var mergePairs = new List<(int Left, int Right)>(mergeNodes.Count);
+                foreach (JsonNode? mergeNode in mergeNodes)
+                {
+                    if (mergeNode is not JsonArray pair || pair.Count != 2 ||
+                        pair[0] is null || pair[1] is null)
+                    {
+                        throw new InvalidDataException(
+                            $"Model at {metaPath} has an invalid BPE merge entry.");
+                    }
+
+                    try
+                    {
+                        mergePairs.Add((pair[0]!.GetValue<int>(), pair[1]!.GetValue<int>()));
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException or FormatException)
+                    {
+                        throw new InvalidDataException(
+                            $"Model at {metaPath} has an invalid BPE merge entry.", ex);
+                    }
+                }
+
+                BpeTokenizer restored;
+                try
+                {
+                    restored = BpeTokenizer.FromMerges(mergePairs);
+                }
+                catch (ArgumentException ex)
+                {
+                    throw new InvalidDataException(
+                        $"Model at {metaPath} has an invalid BPE tokenizer configuration: {ex.Message}", ex);
+                }
+
+                if (supplied is not null &&
+                    (supplied is not BpeTokenizer suppliedBpe || !suppliedBpe.Equals(restored)))
+                {
+                    throw new ArgumentException(
+                        "Tokenizer mismatch: model was built with different BPE merges. " +
+                        "Omit tokenizer: to restore the tokenizer saved with the model.");
+                }
+
+                return restored;
 
             case "custom":
                 if (supplied is null)
@@ -166,9 +217,28 @@ internal static class ModelStorage
 
     private static void WriteMeta(string dir, int n, ITokenizer tokenizer, int vocabSize, int? maxLength)
     {
-        var tokenizerConfig = tokenizer is ByteTokenizer
-            ? new Dictionary<string, object?> { ["kind"] = "byte", ["encoding"] = "utf-8", ["errors"] = "replace" }
-            : new Dictionary<string, object?> { ["kind"] = "custom", ["name"] = tokenizer.GetType().FullName };
+        var tokenizerConfig = tokenizer switch
+        {
+            ByteTokenizer => new Dictionary<string, object?>
+            {
+                ["kind"] = "byte",
+                ["encoding"] = "utf-8",
+                ["errors"] = "replace",
+            },
+            BpeTokenizer bpe => new Dictionary<string, object?>
+            {
+                ["kind"] = "bpe",
+                ["encoding"] = "utf-8",
+                ["merges"] = bpe.MergePairs
+                    .Select(static pair => new[] { pair.Left, pair.Right })
+                    .ToArray(),
+            },
+            _ => new Dictionary<string, object?>
+            {
+                ["kind"] = "custom",
+                ["name"] = tokenizer.GetType().FullName,
+            },
+        };
 
         var meta = new Dictionary<string, object?>
         {
