@@ -1,3 +1,4 @@
+using System.Text;
 using AwesomeAssertions;
 
 namespace Infinigram.Tests;
