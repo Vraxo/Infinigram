@@ -14,7 +14,7 @@ public static class ReplSession
         Model model;
         try
         {
-            model = new AnsiConsoleOutput(output).IsTerminal && console.Profile.Capabilities.Interactive
+            model = IsTerminal(output) && console.Profile.Capabilities.Interactive
                 ? console.Status().Start("Reading corpus...", status =>
                     LoadModel(corpusPath, normalization, () => status.Status = "Building suffix array..."))
                 : LoadModel(corpusPath, normalization);
@@ -63,7 +63,22 @@ public static class ReplSession
         return AnsiConsole.Create(new AnsiConsoleSettings
         {
             Out = destination,
-            Ansi = destination.IsTerminal ? AnsiSupport.Detect : AnsiSupport.No,
+            Ansi = IsTerminal(writer) ? AnsiSupport.Detect : AnsiSupport.No,
         });
+    }
+
+    private static bool IsTerminal(TextWriter writer)
+    {
+        if (ReferenceEquals(writer, Console.Out))
+        {
+            return !Console.IsOutputRedirected && new AnsiConsoleOutput(writer).IsTerminal;
+        }
+
+        if (ReferenceEquals(writer, Console.Error))
+        {
+            return !Console.IsErrorRedirected && new AnsiConsoleOutput(writer).IsTerminal;
+        }
+
+        return false;
     }
 }
