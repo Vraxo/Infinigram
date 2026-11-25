@@ -13,7 +13,7 @@ internal sealed class ContinuationCounter
 
     internal void Clear() => _cache.Clear();
 
-    internal Dictionary<int, int>? Get(SuffixArray suffixArray, int vocabSize, List<int> ctx, int? limit)
+    internal Dictionary<int, int>? Get(SuffixArray suffixArray, List<int> ctx, int? limit)
     {
         var cacheKey = new ContextKey(ctx, limit);
         if (_cache.TryGet(cacheKey, out var cached))
@@ -54,5 +54,4 @@ internal sealed class ContinuationCounter
         _cache.Set(cacheKey, null);
         return null;
     }
-
 }
