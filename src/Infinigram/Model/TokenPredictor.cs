@@ -34,6 +34,10 @@ internal static class TokenPredictor
         NGramModel model, IReadOnlyList<int> context, double smoothing)
     {
         var counts = model.Continuations(context);
+        if (counts is null && context.Count > 0)
+        {
+            counts = model.Continuations(Array.Empty<int>());
+        }
         if (counts is null)
         {
             return null;

@@ -61,10 +61,15 @@ public class PredictTests
     }
 
     [Fact]
-    public void PredictNoMatchReturnsNull()
+    public void PredictNoMatchFallsBackToUnigrams()
     {
         using var model = new NGramModel(new List<int> { 1, 2, 3 });
-        model.Predict(new List<int> { 99, 98 }).Should().BeNull();
+        var probabilities = model.Predict(new List<int> { 99, 98 }, topK: 256);
+
+        probabilities.Should().NotBeNull();
+        probabilities!.Should().ContainKey(1);
+        probabilities.Should().ContainKey(2);
+        probabilities.Should().ContainKey(3);
     }
 
     [Fact]
@@ -126,10 +131,16 @@ public class PredictLogprobsTests
     }
 
     [Fact]
-    public void LogprobsAreNullWhenNoMatch()
+    public void LogprobsUseUnigramFallbackWhenContextHasNoMatch()
     {
         using var model = new NGramModel(TestData.B("abc").ToArray());
-        model.PredictLogprobs(new List<int> { 200, 201 }).Should().BeNull();
+        var logprobs = model.PredictLogprobs(new List<int> { 200, 201 }, topK: 256);
+
+        logprobs.Should().NotBeNull();
+        logprobs!.Should().ContainKey((int)'a');
+        logprobs.Should().ContainKey((int)'b');
+        logprobs.Should().ContainKey((int)'c');
+        logprobs.Values.Should().OnlyContain(value => value <= 0);
     }
 }
 
@@ -557,5 +568,55 @@ public class ConfidenceAwareBackoffTests
         using var model = new NGramModel(corpus);
 
         model.Score(new[] { 1, 2, 8 }).Should().BeGreaterThan(model.Score(new[] { 1, 2, 7 }));
+    }
+}
+
+
+public class UnigramDistributionTests
+{
+    [Fact]
+    public void EmptyContextReflectsCorpusTokenFrequencies()
+    {
+        using var model = new NGramModel(new[] { 1, 1, 1, 1, 2, 2, 3 });
+
+        var probabilities = model.Predict(Array.Empty<int>(), topK: 256);
+
+        probabilities.Should().NotBeNull();
+        probabilities![1].Should().BeApproximately(4.0 / 7.0, 1e-10);
+        probabilities[2].Should().BeApproximately(2.0 / 7.0, 1e-10);
+        probabilities[3].Should().BeApproximately(1.0 / 7.0, 1e-10);
+    }
+
+    [Fact]
+    public void UnseenContextFallsBackToUnigramDistribution()
+    {
+        using var model = new NGramModel(new[] { 1, 1, 1, 1, 2, 2, 3 });
+
+        var probabilities = model.Predict(new[] { 99, 98 }, topK: 256);
+
+        probabilities.Should().NotBeNull();
+        probabilities![1].Should().BeGreaterThan(probabilities[2]);
+        probabilities[2].Should().BeGreaterThan(probabilities[3]);
+    }
+
+    [Fact]
+    public void UpdatingCorpusUpdatesUnigramDistribution()
+    {
+        using var model = new NGramModel(new[] { 1, 2, 2 });
+        model.Update(new[] { 1, 1, 1 });
+
+        var probabilities = model.Predict(Array.Empty<int>(), topK: 256);
+
+        probabilities.Should().NotBeNull();
+        probabilities![1].Should().BeApproximately(4.0 / 6.0, 1e-10);
+        probabilities[2].Should().BeApproximately(2.0 / 6.0, 1e-10);
+    }
+
+    [Fact]
+    public void SequenceScoringUsesUnigramProbabilityForFirstToken()
+    {
+        using var model = new NGramModel(new[] { 1, 1, 1, 1, 2, 2, 3 });
+
+        model.Score(new[] { 1 }).Should().BeGreaterThan(model.Score(new[] { 3 }));
     }
 }
