@@ -507,3 +507,55 @@ public class ContinuationSamplingTests
         continuations.Values.Sum().Should().Be(NGramModel.DefaultContinuationLimit);
     }
 }
+
+
+public class ConfidenceAwareBackoffTests
+{
+    [Fact]
+    public void SparseContextBacksOffToBetterSupportedShorterContext()
+    {
+        var corpus = new List<int> { 1, 2, 7 };
+        for (int i = 0; i < 20; i++)
+        {
+            corpus.AddRange(new[] { 4, 2, 8 });
+        }
+
+        using var model = new NGramModel(corpus);
+        var probabilities = model.Predict(new[] { 1, 2 }, topK: 256);
+
+        probabilities.Should().NotBeNull();
+        probabilities![8].Should().BeGreaterThan(probabilities[7]);
+    }
+
+    [Fact]
+    public void StronglySupportedContextKeepsItsSpecificDistribution()
+    {
+        var corpus = new List<int>();
+        for (int i = 0; i < 100; i++)
+        {
+            corpus.AddRange(new[] { 1, 2, 7 });
+            corpus.AddRange(new[] { 4, 2, 8 });
+        }
+
+        using var model = new NGramModel(corpus);
+        var probabilities = model.Predict(new[] { 1, 2 }, topK: 256);
+
+        probabilities.Should().NotBeNull();
+        probabilities!.Should().ContainKey(7);
+        probabilities.Should().NotContainKey(8);
+    }
+
+    [Fact]
+    public void SequenceScoringUsesConfidenceAwareBackoff()
+    {
+        var corpus = new List<int> { 1, 2, 7 };
+        for (int i = 0; i < 20; i++)
+        {
+            corpus.AddRange(new[] { 4, 2, 8 });
+        }
+
+        using var model = new NGramModel(corpus);
+
+        model.Score(new[] { 1, 2, 8 }).Should().BeGreaterThan(model.Score(new[] { 1, 2, 7 }));
+    }
+}
