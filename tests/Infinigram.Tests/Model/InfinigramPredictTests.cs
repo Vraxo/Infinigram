@@ -67,7 +67,9 @@ public class PredictTests
         var probabilities = model.Predict(new List<int> { 99, 98 }, topK: 256);
 
         probabilities.Should().NotBeNull();
-        probabilities!.Should().ContainKeys(1, 2, 3);
+        probabilities!.Should().ContainKey(1);
+        probabilities.Should().ContainKey(2);
+        probabilities.Should().ContainKey(3);
     }
 
     [Fact]
@@ -135,7 +137,9 @@ public class PredictLogprobsTests
         var logprobs = model.PredictLogprobs(new List<int> { 200, 201 }, topK: 256);
 
         logprobs.Should().NotBeNull();
-        logprobs!.Should().ContainKeys((int)'a', (int)'b', (int)'c');
+        logprobs!.Should().ContainKey((int)'a');
+        logprobs.Should().ContainKey((int)'b');
+        logprobs.Should().ContainKey((int)'c');
         logprobs.Values.Should().OnlyContain(value => value <= 0);
     }
 }
