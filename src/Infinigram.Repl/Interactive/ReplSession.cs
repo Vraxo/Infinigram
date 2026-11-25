@@ -33,7 +33,8 @@ public static class ReplSession
             else output.WriteLine("Enter a prompt to generate a continuation. End input to exit.");
             while (true)
             {
-                console.Markup("[bold cyan]infinigram> [/]");
+                if (IsTerminal(output)) console.Markup("[bold cyan]infinigram> [/]");
+                else output.Write("infinigram> ");
                 output.Flush();
                 string? prompt = input.ReadLine();
                 if (prompt is null) break;
