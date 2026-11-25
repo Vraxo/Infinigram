@@ -177,7 +177,7 @@ internal static class ModelStorage
                 {
                     restored = BpeTokenizer.FromMerges(mergePairs);
                 }
-                catch (ArgumentException ex)
+                catch (Exception ex) when (ex is ArgumentException or OverflowException)
                 {
                     throw new InvalidDataException(
                         $"Model at {metaPath} has an invalid BPE tokenizer configuration: {ex.Message}", ex);
