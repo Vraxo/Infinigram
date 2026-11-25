@@ -155,7 +155,7 @@ public sealed class NGramModel : IDisposable
         {
             return new Dictionary<int, int>(_unigramCounts);
         }
-        return _continuations.Get(_sa, VocabSize, SuffixMatcher.LimitContext(context, MaxLength), limit);
+        return _continuations.Get(_sa, SuffixMatcher.LimitContext(context, MaxLength), limit);
     }
 
     public void ClearCache() => _continuations.Clear();
