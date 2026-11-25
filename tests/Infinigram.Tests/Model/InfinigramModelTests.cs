@@ -416,14 +416,16 @@ public class ContinuationsTests
     }
 
     [Fact]
-    public void EmptyContextReturnsUniform()
+    public void EmptyContextReturnsCorpusFrequencies()
     {
         using var model = new NGramModel(new List<int> { 1, 2, 1, 3, 1 });
         var conts = model.Continuations(new List<int>());
 
         conts.Should().NotBeNull();
-        conts!.Should().HaveCount(256);
-        conts.Values.Should().OnlyContain(v => v == 1);
+        conts!.Should().HaveCount(3);
+        conts.Should().Contain(new KeyValuePair<int, int>(1, 3));
+        conts.Should().Contain(new KeyValuePair<int, int>(2, 1));
+        conts.Should().Contain(new KeyValuePair<int, int>(3, 1));
     }
 
     [Fact]
