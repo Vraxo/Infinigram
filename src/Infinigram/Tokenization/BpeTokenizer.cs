@@ -445,6 +445,11 @@ public sealed class BpeTokenizer : ITokenizer, IEquatable<BpeTokenizer>
 
         internal void Remove(int position)
         {
+            if (position < 0 || position >= _indices.Length)
+            {
+                return;
+            }
+
             int index = _indices[position];
             if (index < 0)
             {
