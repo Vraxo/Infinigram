@@ -166,8 +166,9 @@ string continuation = words.GenerateText("the cat", maxTokens: 40);
 
 This index is not a separately trained language model. Its vocabulary is made
 from tokens that occur in the corpus, its sequence is the corpus tokenized at
-word/punctuation boundaries, and its continuation counts are direct suffix-array
-counts. It stores no learned weights and can be rebuilt from the original model.
+word/punctuation boundaries, and its continuation counts come directly from suffix-array matches. Generation interpolates counts
+from several suffix lengths with Witten–Bell weights computed from those corpus
+counts; it stores no learned weights and can be rebuilt from the original model.
 It is created only when requested, so ordinary byte-model construction, memory
 use, and generation performance are unchanged.
 
