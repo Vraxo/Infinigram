@@ -32,8 +32,7 @@ jobs:
           dotnet run --configuration Release
           --project benchmarks/Infinigram.Benchmarks/Infinigram.Benchmarks.csproj
           --
-          --filter "*PredictionBenchmarks*"
-          --job short
+          --filter "*PredictionHotPathBenchmarks*"
           --artifacts ./BenchmarkDotNet.Artifacts
 
       - name: Upload benchmark results
