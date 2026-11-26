@@ -34,26 +34,19 @@ internal static class TokenPredictor
     internal static Dictionary<int, double>? GetDistribution(
         NGramModel model, IReadOnlyList<int> context, double smoothing)
     {
-        var unigramCounts = model.Continuations(Array.Empty<int>());
-        if (unigramCounts is null)
-        {
-            return null;
-        }
-
-        var unigramDistribution = ToProbabilities(unigramCounts, model.VocabSize, smoothing);
         if (context.Count == 0)
         {
-            return unigramDistribution;
+            return GetUnigramDistribution(model, smoothing);
         }
 
         var (_, longestMatchLength) = model.LongestSuffix(context);
         if (longestMatchLength == 0)
         {
-            return unigramDistribution;
+            return GetUnigramDistribution(model, smoothing);
         }
 
         var orders = GetBackoffOrders(longestMatchLength);
-        var evidence = new List<(Dictionary<int, int> Counts, long Total, double ContextWeight)>(orders.Count);
+        var evidence = new List<(IReadOnlyDictionary<int, int> Counts, long Total, double ContextWeight)>(orders.Count);
         Dictionary<int, double>? lowerOrderDistribution = null;
 
         foreach (int order in orders)
@@ -90,7 +83,13 @@ internal static class TokenPredictor
             evidence.Add((counts, total, contextWeight));
         }
 
-        var distribution = lowerOrderDistribution ?? unigramDistribution;
+        // Most normal predictions have a strong exact context. Avoid copying
+        // the unigram table unless an actual backoff path needs that prior.
+        var distribution = lowerOrderDistribution ?? GetUnigramDistribution(model, smoothing);
+        if (distribution is null)
+        {
+            return null;
+        }
 
         // Build from broad to specific so each longer context refines the
         // distribution produced by its shorter suffix.
@@ -101,6 +100,12 @@ internal static class TokenPredictor
         }
 
         return distribution;
+    }
+
+    private static Dictionary<int, double>? GetUnigramDistribution(NGramModel model, double smoothing)
+    {
+        var counts = model.Continuations(Array.Empty<int>());
+        return counts is null ? null : ToProbabilities(counts, model.VocabSize, smoothing);
     }
 
     private static List<int> GetBackoffOrders(int longestMatchLength)
@@ -141,7 +146,7 @@ internal static class TokenPredictor
     }
 
     private static Dictionary<int, double> Interpolate(
-        Dictionary<int, int> counts,
+        IReadOnlyDictionary<int, int> counts,
         long total,
         double contextWeight,
         Dictionary<int, double> lowerOrder)
@@ -165,7 +170,7 @@ internal static class TokenPredictor
     }
 
     private static Dictionary<int, double> ToProbabilities(
-        Dictionary<int, int> counts, int vocabSize, double smoothing)
+        IReadOnlyDictionary<int, int> counts, int vocabSize, double smoothing)
     {
         double total = counts.Values.Sum(count => (double)count);
         double smoothedTotal = total + smoothing * vocabSize;
