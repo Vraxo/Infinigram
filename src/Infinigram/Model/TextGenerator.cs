@@ -74,21 +74,23 @@ internal static class TextGenerator
         int maxContext = Math.Min(MaximumNoveltyContext, history.Count - historyStart);
         if (maxContext < MinimumNoveltyContext) return probabilities;
 
+        var repetitions = new Dictionary<int, int>();
+        for (int length = maxContext; length >= MinimumNoveltyContext; length--)
+        {
+            int currentStart = history.Count - length;
+            for (int previous = historyStart; previous + length < currentStart; previous++)
+            {
+                int continuation = history[previous + length];
+                if (probabilities.ContainsKey(continuation) && Matches(history, previous, currentStart, length))
+                    repetitions[continuation] = repetitions.GetValueOrDefault(continuation) + 1;
+            }
+        }
+
         var adjusted = new Dictionary<int, double>(probabilities.Count);
         foreach (var (candidate, probability) in probabilities)
         {
-            int repetitions = 0;
-            for (int length = maxContext; length >= MinimumNoveltyContext; length--)
-            {
-                int currentStart = history.Count - length;
-                for (int previous = historyStart; previous + length < currentStart; previous++)
-                {
-                    if (Matches(history, previous, currentStart, length) &&
-                        history[previous + length] == candidate)
-                        repetitions++;
-                }
-            }
-            adjusted[candidate] = repetitions == 0 ? probability : probability / Math.Pow(penalty, repetitions);
+            int count = repetitions.GetValueOrDefault(candidate);
+            adjusted[candidate] = count == 0 ? probability : probability / Math.Pow(penalty, count);
         }
         return adjusted;
     }
