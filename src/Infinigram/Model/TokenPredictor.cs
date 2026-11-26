@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+
 namespace Infinigram;
 
 internal static class TokenPredictor
@@ -31,7 +33,26 @@ internal static class TokenPredictor
         return probabilities;
     }
 
-    internal static Dictionary<int, double>? GetDistribution(
+    internal static IReadOnlyDictionary<int, double>? GetDistribution(
+        NGramModel model, IReadOnlyList<int> context, double smoothing)
+    {
+        if (model.TryGetPredictionDistribution(context, smoothing, out var cached))
+        {
+            return cached;
+        }
+
+        var distribution = BuildDistribution(model, context, smoothing);
+        if (distribution is null)
+        {
+            return null;
+        }
+
+        var readOnlyDistribution = new ReadOnlyDictionary<int, double>(distribution);
+        model.CachePredictionDistribution(context, smoothing, readOnlyDistribution);
+        return readOnlyDistribution;
+    }
+
+    private static Dictionary<int, double>? BuildDistribution(
         NGramModel model, IReadOnlyList<int> context, double smoothing)
     {
         if (context.Count == 0)
