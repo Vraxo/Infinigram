@@ -8,8 +8,31 @@ public readonly record struct GenerationOverlap(int GeneratedTokens, int Matched
 }
 
 /// <summary>Utilities for evaluating how much generated output reuses its training corpus.</summary>
+public readonly record struct GenerationEvaluation(GenerationOverlap Overlap, double MeanLogProbability);
+
 public static class GenerationMetrics
 {
+    /// <summary>
+    /// Evaluates exact corpus reuse and average model log-probability per generated token.
+    /// Log-probability is a model-relative consistency signal, not a human fluency score.
+    /// </summary>
+    public static GenerationEvaluation Evaluate(
+        NGramModel model, IReadOnlyList<int> generatedTokens, int minimumSpan = 32,
+        double smoothing = 1e-10)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(generatedTokens);
+        if (smoothing < 0 || !double.IsFinite(smoothing))
+            throw new ArgumentOutOfRangeException(nameof(smoothing));
+
+        var overlap = MeasureOverlap(model, generatedTokens, minimumSpan);
+        double meanLogProbability = generatedTokens.Count == 0
+            ? 0.0
+            : model.Score(generatedTokens, smoothing) / generatedTokens.Count;
+
+        return new GenerationEvaluation(overlap, meanLogProbability);
+    }
+
     /// <summary>
     /// Measures the fraction of generated tokens covered by exact corpus spans at least
     /// <paramref name="minimumSpan"/> tokens long. Matches are counted left-to-right and
