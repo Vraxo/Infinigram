@@ -39,7 +39,27 @@ internal static class TokenPredictor
             return GetUnigramDistribution(model, smoothing);
         }
 
-        var (_, longestMatchLength) = model.LongestSuffix(context);
+        var exactCounts = model.ContinuationsExact(context);
+        int longestMatchLength;
+        if (exactCounts is { Count: > 0 })
+        {
+            longestMatchLength = model.MaxLength is int max && max > 0
+                ? Math.Min(context.Count, max)
+                : context.Count;
+
+            long exactTotal = exactCounts.Values.Sum(count => (long)count);
+            double exactWeight = exactTotal / (double)(exactTotal + exactCounts.Count + 1);
+            if (1.0 - exactWeight <= MaximumBackoffMass)
+            {
+                return ToProbabilities(exactCounts, model.VocabSize, smoothing);
+            }
+        }
+        else
+        {
+            var (_, matchLength) = model.LongestSuffix(context);
+            longestMatchLength = matchLength;
+        }
+
         if (longestMatchLength == 0)
         {
             return GetUnigramDistribution(model, smoothing);
@@ -49,8 +69,20 @@ internal static class TokenPredictor
         var evidence = new List<(IReadOnlyDictionary<int, int> Counts, long Total, double ContextWeight)>(orders.Count);
         Dictionary<int, double>? lowerOrderDistribution = null;
 
+        if (exactCounts is { Count: > 0 })
+        {
+            long total = exactCounts.Values.Sum(count => (long)count);
+            double contextWeight = total / (double)(total + exactCounts.Count + 1);
+            evidence.Add((exactCounts, total, contextWeight));
+        }
+
         foreach (int order in orders)
         {
+            if (exactCounts is { Count: > 0 } && order == longestMatchLength)
+            {
+                continue;
+            }
+
             var suffix = GetSuffix(context, order);
             var counts = model.ContinuationsExact(suffix);
             if (counts is not { Count: > 0 })
