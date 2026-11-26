@@ -40,7 +40,7 @@ internal static class GenerationExperimentRunner
 
         var rows = new List<string>
         {
-            "corpus,tokenizer,vocab_size,training_bytes,prompt,prompt_offset,temperature,repetition_penalty,seed,generated_tokens,matched_ratio,longest_match,mean_log_probability,generated_text"
+            "corpus,tokenizer,vocab_size,training_bytes,prompt,prompt_offset,temperature,repetition_penalty,seed,generated_tokens,metric_tokenizer,matched_ratio,longest_match,mean_log_probability,generated_text"
         };
 
         foreach (string corpusPath in corpusPaths)
@@ -112,6 +112,7 @@ internal static class GenerationExperimentRunner
                                 penalty.ToString("0.##", CultureInfo.InvariantCulture),
                                 runSeed.ToString(CultureInfo.InvariantCulture),
                                 generated.Length.ToString(CultureInfo.InvariantCulture),
+                                tokenizerName,
                                 evaluation.Overlap.MatchedRatio.ToString("0.0000", CultureInfo.InvariantCulture),
                                 evaluation.Overlap.LongestMatch.ToString(CultureInfo.InvariantCulture),
                                 evaluation.MeanLogProbability.ToString("0.000000", CultureInfo.InvariantCulture),
@@ -122,6 +123,58 @@ internal static class GenerationExperimentRunner
 
                 Console.WriteLine($"Evaluated {Path.GetFileName(corpusPath)} with {tokenizerName} ({trainingTokens.Length:N0} training tokens).");
             }
+
+            // The word index is an additional view of the same training text.
+            // Score its output with the byte model so overlap and likelihood use byte units.
+            var byteTokenizer = new ByteTokenizer();
+            using var byteModel = new NGramModel(trainingBytes, byteTokenizer);
+            var wordIndex = byteModel.CreateWordIndex();
+
+            for (int promptIndex = 0; promptIndex < promptStarts.Length; promptIndex++)
+            {
+                (string promptText, int promptStart) =
+                    GetWordAlignedPrompt(corpus, promptStarts[promptIndex], PromptLength);
+                int[] prompt = byteTokenizer.Encode(promptText).ToArray();
+                int runSeed = Seed + promptIndex;
+
+                foreach (double temperature in Temperatures)
+                {
+                    const double penalty = 1.0;
+                    string fullText = wordIndex.GenerateText(
+                        promptText,
+                        maxTokens: 24,
+                        temperature: temperature,
+                        topK: 40,
+                        rng: new Random(runSeed));
+
+                    string generatedText = fullText.StartsWith(promptText, StringComparison.Ordinal)
+                        ? fullText[promptText.Length..]
+                        : string.Empty;
+                    int[] generatedBytes = byteTokenizer.Encode(generatedText).ToArray();
+                    GenerationEvaluation evaluation = GenerationMetrics.Evaluate(
+                        byteModel, prompt, generatedBytes, minimumSpan: MinimumSpan);
+
+                    rows.Add(string.Join(",",
+                        Csv(Path.GetFileName(corpusPath)),
+                        "word-index",
+                        wordIndex.VocabularySize.ToString(CultureInfo.InvariantCulture),
+                        trainingBytes.Length.ToString(CultureInfo.InvariantCulture),
+                        promptIndex.ToString(CultureInfo.InvariantCulture),
+                        (promptStart - validationStart).ToString(CultureInfo.InvariantCulture),
+                        temperature.ToString("0.##", CultureInfo.InvariantCulture),
+                        penalty.ToString("0.##", CultureInfo.InvariantCulture),
+                        runSeed.ToString(CultureInfo.InvariantCulture),
+                        CorpusWordIndex.Tokenize(generatedText).Count.ToString(CultureInfo.InvariantCulture),
+                        "byte",
+                        evaluation.Overlap.MatchedRatio.ToString("0.0000", CultureInfo.InvariantCulture),
+                        evaluation.Overlap.LongestMatch.ToString(CultureInfo.InvariantCulture),
+                        evaluation.MeanLogProbability.ToString("0.000000", CultureInfo.InvariantCulture),
+                        Csv(generatedText)));
+                }
+            }
+
+            Console.WriteLine(
+                $"Evaluated {Path.GetFileName(corpusPath)} with word-index ({wordIndex.WordCount:N0} word tokens).");
         }
 
         string fullOutputPath = Path.GetFullPath(outputPath);
@@ -129,7 +182,24 @@ internal static class GenerationExperimentRunner
         File.WriteAllText(fullOutputPath, string.Join(Environment.NewLine, rows) + Environment.NewLine, new UTF8Encoding(false));
         Console.WriteLine($"Wrote {rows.Count - 1} experiment rows to {fullOutputPath}");
         Console.WriteLine("Prompts come from the held-out final 20%; overlap is measured only against the training partition.");
-        Console.WriteLine("Mean log-probability is a model-relative consistency signal, not a human fluency score; compare it only within a tokenizer.");
+        Console.WriteLine("Mean log-probability is model-relative, not a human fluency score; compare rows with the same metric_tokenizer.");
+        Console.WriteLine("Word-index rows use byte-level overlap and likelihood metrics; generated_tokens counts word/punctuation units.");
+    }
+
+    private static (string Text, int Start) GetWordAlignedPrompt(
+        string corpus, int requestedStart, int desiredLength)
+    {
+        int start = Math.Clamp(requestedStart, 0, corpus.Length);
+        while (start < corpus.Length && start > 0 && !char.IsWhiteSpace(corpus[start - 1]))
+            start++;
+        while (start < corpus.Length && char.IsWhiteSpace(corpus[start]))
+            start++;
+
+        int end = Math.Min(corpus.Length, start + desiredLength);
+        while (end < corpus.Length && !char.IsWhiteSpace(corpus[end]))
+            end++;
+
+        return (corpus[start..end].TrimEnd(), start);
     }
 
     private static string GetOutputPath(string[] args)
