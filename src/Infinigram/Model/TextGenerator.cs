@@ -11,7 +11,7 @@ internal static class TextGenerator
         NGramModel model, IReadOnlyList<int>? context = null, int maxTokens = 100,
         double temperature = 1.0, int? topK = null, double smoothing = 0.0,
         IEnumerable<IReadOnlyList<int>>? stop = null, Random? rng = null,
-        double repetitionPenalty = 1.0, int noveltyWindow = 256)
+        double repetitionPenalty = 1.15, int noveltyWindow = 256)
     {
         ArgumentNullException.ThrowIfNull(model);
         if (maxTokens < 0) throw new ArgumentOutOfRangeException(nameof(maxTokens));
@@ -57,7 +57,7 @@ internal static class TextGenerator
     internal static string GenerateText(
         NGramModel model, string context = "", int maxTokens = 100, double temperature = 1.0,
         int? topK = 50, double smoothing = 0.0, IEnumerable<string>? stop = null, Random? rng = null,
-        double repetitionPenalty = 1.0, int noveltyWindow = 256)
+        double repetitionPenalty = 1.15, int noveltyWindow = 256)
     {
         var seedTokens = string.IsNullOrEmpty(context) ? new List<int>() : model.Tokenizer.Encode(context).ToList();
         var stopTokens = stop?.Where(s => s.Length > 0).Select(s => model.Tokenizer.Encode(s).ToList()).ToList();
