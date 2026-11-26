@@ -249,6 +249,13 @@ public sealed class NGramModel : IDisposable
         return SequenceScorer.Score(this, sequence, smoothing);
     }
 
+    public double Score(IReadOnlyList<int> sequence, IReadOnlyList<int> initialContext, double smoothing = 1e-10)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(initialContext);
+        return SequenceScorer.Score(this, sequence, initialContext, smoothing);
+    }
+
     public void Update(IReadOnlyList<int> newTokens)
     {
         ThrowIfDisposed();

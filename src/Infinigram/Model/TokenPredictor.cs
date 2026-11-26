@@ -129,7 +129,7 @@ internal static class TokenPredictor
                     return ToProbabilities(counts, model.VocabSize, smoothing);
                 }
 
-                lowerOrderDistribution = ToProbabilities(counts, model.VocabSize, smoothing: 0.0);
+                lowerOrderDistribution = ToProbabilities(counts, model.VocabSize, smoothing);
                 break;
             }
 

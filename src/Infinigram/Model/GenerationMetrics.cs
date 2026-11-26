@@ -7,20 +7,28 @@ public readonly record struct GenerationOverlap(int GeneratedTokens, int Matched
     public double MatchedRatio => GeneratedTokens == 0 ? 0.0 : (double)MatchedTokens / GeneratedTokens;
 }
 
-/// <summary>Utilities for evaluating how much generated output reuses its training corpus.</summary>
+/// <summary>Model-relative measures for a generated continuation.</summary>
 public readonly record struct GenerationEvaluation(GenerationOverlap Overlap, double MeanLogProbability);
 
 public static class GenerationMetrics
 {
     /// <summary>
-    /// Evaluates exact corpus reuse and average model log-probability per generated token.
-    /// Log-probability is a model-relative consistency signal, not a human fluency score.
+    /// Evaluates exact corpus reuse and average conditional log-probability per generated token.
+    /// The initial context is the prompt supplied to generation. Log-probability is a
+    /// model-relative consistency signal, not a human fluency score.
     /// </summary>
     public static GenerationEvaluation Evaluate(
         NGramModel model, IReadOnlyList<int> generatedTokens, int minimumSpan = 32,
-        double smoothing = 1e-10)
+        double smoothing = 1e-10) =>
+        Evaluate(model, Array.Empty<int>(), generatedTokens, minimumSpan, smoothing);
+
+    /// <summary>Evaluates a generated continuation conditioned on its original prompt.</summary>
+    public static GenerationEvaluation Evaluate(
+        NGramModel model, IReadOnlyList<int> initialContext, IReadOnlyList<int> generatedTokens,
+        int minimumSpan = 32, double smoothing = 1e-10)
     {
         ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(initialContext);
         ArgumentNullException.ThrowIfNull(generatedTokens);
         if (smoothing < 0 || !double.IsFinite(smoothing))
             throw new ArgumentOutOfRangeException(nameof(smoothing));
@@ -28,7 +36,7 @@ public static class GenerationMetrics
         var overlap = MeasureOverlap(model, generatedTokens, minimumSpan);
         double meanLogProbability = generatedTokens.Count == 0
             ? 0.0
-            : model.Score(generatedTokens, smoothing) / generatedTokens.Count;
+            : model.Score(generatedTokens, initialContext, smoothing) / generatedTokens.Count;
 
         return new GenerationEvaluation(overlap, meanLogProbability);
     }
