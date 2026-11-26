@@ -227,7 +227,7 @@ public sealed class NGramModel : IDisposable
     public List<int> Generate(IReadOnlyList<int>? context = null, int maxTokens = 100,
         double temperature = 1.0, int? topK = null, double smoothing = 0.0,
         IEnumerable<IReadOnlyList<int>>? stop = null, Random? rng = null,
-        double repetitionPenalty = 1.0, int noveltyWindow = 256)
+        double repetitionPenalty = 1.15, int noveltyWindow = 256)
     {
         ThrowIfDisposed();
         return TextGenerator.Generate(this, context, maxTokens, temperature, topK, smoothing, stop, rng,
@@ -236,7 +236,7 @@ public sealed class NGramModel : IDisposable
 
     public string GenerateText(string context = "", int maxTokens = 100, double temperature = 1.0,
         int? topK = 50, double smoothing = 0.0, IEnumerable<string>? stop = null, Random? rng = null,
-        double repetitionPenalty = 1.0, int noveltyWindow = 256)
+        double repetitionPenalty = 1.15, int noveltyWindow = 256)
     {
         ThrowIfDisposed();
         return TextGenerator.GenerateText(this, context, maxTokens, temperature, topK, smoothing, stop, rng,
