@@ -61,6 +61,26 @@ public class PredictTests
     }
 
     [Fact]
+    public void RareSpecificContextInterpolatesWithBroaderSuffixEvidence()
+    {
+        int[] corpus =
+        [
+            9, 1, 2, 3,
+            8, 2, 4,
+            7, 2, 4,
+            6, 2, 4,
+            5, 2, 4,
+        ];
+        using var model = new NGramModel(corpus);
+        var probabilities = model.Predict(new[] { 1, 2 }, topK: 256);
+
+        probabilities.Should().NotBeNull();
+        probabilities![(int)3].Should().BeGreaterThan(0.55);
+        probabilities[(int)4].Should().BeGreaterThan(0.30);
+        Math.Abs(probabilities.Values.Sum() - 1.0).Should().BeLessThanOrEqualTo(0.01);
+    }
+
+    [Fact]
     public void PredictNoMatchFallsBackToUnigrams()
     {
         using var model = new NGramModel(new List<int> { 1, 2, 3 });
