@@ -167,6 +167,31 @@ public class CorpusWordIndexTests
     }
 
     [Fact]
+    public void StructuredGenerationUsesOnlyObservedPhraseChunks()
+    {
+        using var model = new NGramModel(
+            "the red fox jumps. the blue bird flies.");
+        var words = model.CreateWordIndex();
+
+        var generated = Enumerable.Range(1, 64)
+            .Select(seed => words.GenerateStructuredText(
+                "the",
+                maxWords: 4,
+                temperature: 1.0,
+                topK: null,
+                rng: new Random(seed)))
+            .ToArray();
+
+        var phrases = generated
+            .Select(text => string.Join(" ", CorpusWordIndex.Tokenize(text).Skip(1).Take(3)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        phrases.Should().Contain("red fox jumps");
+        phrases.Should().Contain("blue bird flies");
+    }
+
+    [Fact]
     public void StructuredGenerationPreservesPromptAndRejectsUnknownTrailingContext()
     {
         using var model = new NGramModel("the cat sleeps. a dog runs, jumps, and plays!");
