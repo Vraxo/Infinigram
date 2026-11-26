@@ -13,6 +13,7 @@ public sealed class CorpusWordIndex
     public const int DefaultContinuationLimit = 10000;
 
     private const int MaximumContextWords = 12;
+    private const int MaximumBackoffLevels = 8;
 
     private static readonly Regex TokenPattern = new(
         @"[\p{L}\p{M}\p{N}_]+(?:['’\-‐‑‒–][\p{L}\p{M}\p{N}_]+)*|[\uD800-\uDBFF][\uDC00-\uDFFF]|[^\s]",
@@ -165,7 +166,7 @@ public sealed class CorpusWordIndex
                 }
             }
 
-            var probabilities = ToProbabilities(counts, topK);
+            var probabilities = BuildDistribution(current, topK);
             if (probabilities.Count == 0)
             {
                 break;
@@ -209,33 +210,97 @@ public sealed class CorpusWordIndex
         return result;
     }
 
-    private Dictionary<int, double> ToProbabilities(
-        IReadOnlyDictionary<int, int> counts, int? topK)
+    private Dictionary<int, double> BuildDistribution(List<int> context, int? topK)
     {
-        if (counts.Count == 0 || _vocabulary.Length == 0)
+        var distribution = ToProbabilities(_unigramCounts);
+        var orders = GetBackoffOrders(context.Count);
+
+        for (int i = orders.Count - 1; i >= 0; i--)
         {
-            return new Dictionary<int, double>();
+            int order = orders[i];
+            var suffix = context.GetRange(context.Count - order, order);
+            var counts = _continuations.GetExact(_suffixArray, suffix, DefaultContinuationLimit);
+            if (counts is not { Count: > 0 })
+            {
+                continue;
+            }
+
+            long total = counts.Values.Sum(count => (long)count);
+            double contextWeight = total / (double)(total + counts.Count + 1);
+            distribution = Interpolate(counts, total, contextWeight, distribution);
         }
 
-        IEnumerable<KeyValuePair<int, int>> selected = counts;
-        if (topK is int limit)
+        if (topK is int limit && distribution.Count > limit)
         {
-            selected = selected
+            return distribution
                 .OrderByDescending(pair => pair.Value)
-                .Take(Math.Clamp(limit, 1, _vocabulary.Length));
+                .Take(Math.Clamp(limit, 1, distribution.Count))
+                .ToDictionary(pair => pair.Key, pair => pair.Value);
         }
 
-        var entries = selected.ToArray();
-        double total = entries.Sum(pair => (double)pair.Value);
+        return distribution;
+    }
+
+    private static List<int> GetBackoffOrders(int contextLength)
+    {
+        var orders = new List<int>(5);
+        int order = contextLength;
+
+        for (int level = 0; level < MaximumBackoffLevels && order > 0; level++)
+        {
+            orders.Add(order);
+            if (order == 1)
+            {
+                break;
+            }
+
+            order = Math.Max(1, order / 2);
+        }
+
+        if (orders.Count > 0 && orders[^1] != 1)
+        {
+            orders.Add(1);
+        }
+
+        return orders;
+    }
+
+    private static Dictionary<int, double> Interpolate(
+        IReadOnlyDictionary<int, int> counts,
+        long total,
+        double contextWeight,
+        Dictionary<int, double> lowerOrder)
+    {
+        double lowerOrderWeight = 1.0 - contextWeight;
+        var probabilities = new Dictionary<int, double>(lowerOrder.Count + counts.Count);
+
+        foreach (var (token, probability) in lowerOrder)
+        {
+            probabilities[token] = probability * lowerOrderWeight;
+        }
+
+        foreach (var (token, count) in counts)
+        {
+            double maximumLikelihood = count / (double)total;
+            probabilities[token] = probabilities.GetValueOrDefault(token)
+                + contextWeight * maximumLikelihood;
+        }
+
+        return probabilities;
+    }
+
+    private Dictionary<int, double> ToProbabilities(IReadOnlyDictionary<int, int> counts)
+    {
+        double total = counts.Values.Sum(count => (double)count);
         if (total <= 0.0)
         {
             return new Dictionary<int, double>();
         }
 
-        var probabilities = new Dictionary<int, double>(entries.Length);
-        foreach (var (id, count) in entries)
+        var probabilities = new Dictionary<int, double>(counts.Count);
+        foreach (var (token, count) in counts)
         {
-            probabilities[id] = count / total;
+            probabilities[token] = count / total;
         }
         return probabilities;
     }
