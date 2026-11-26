@@ -33,6 +33,7 @@ jobs:
           --project benchmarks/Infinigram.Benchmarks/Infinigram.Benchmarks.csproj
           --
           --filter "*PredictionBenchmarks*"
+          --job short
           --artifacts ./BenchmarkDotNet.Artifacts
 
       - name: Upload benchmark results
