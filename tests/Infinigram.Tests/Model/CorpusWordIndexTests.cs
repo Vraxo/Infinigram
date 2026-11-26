@@ -92,6 +92,29 @@ public class CorpusWordIndexTests
     }
 
     [Fact]
+    public void GenerationInterpolatesLongAndShortCorpusContexts()
+    {
+        using var model = new NGramModel(
+            "alpha beta gamma delta one. omega beta gamma delta two. zeta beta gamma delta three.");
+        var words = model.CreateWordIndex();
+
+        var generated = Enumerable.Range(1, 64)
+            .Select(seed => words.GenerateText(
+                "alpha beta gamma delta",
+                maxTokens: 1,
+                temperature: 1.0,
+                topK: null,
+                rng: new Random(seed)))
+            .Select(text => CorpusWordIndex.Tokenize(text).Last())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        generated.Should().Contain("one");
+        generated.Should().Contain("two");
+        generated.Should().Contain("three");
+    }
+
+    [Fact]
     public void TokenizeKeepsWordsAndPunctuationSeparate()
     {
         CorpusWordIndex.Tokenize("Hello, world!").Should().Equal("Hello", ",", "world", "!");
