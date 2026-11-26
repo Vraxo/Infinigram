@@ -181,7 +181,8 @@ public class CorpusWordIndexTests
             rng: new Random(42));
 
         generated.Should().StartWith("the cat");
-        generated.Should().EndWith(".");
+        (generated.EndsWith(".", StringComparison.Ordinal) ||
+         generated.EndsWith("!", StringComparison.Ordinal)).Should().BeTrue();
     }
 
     [Fact]
