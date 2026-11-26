@@ -61,6 +61,60 @@ public class PredictTests
     }
 
     [Fact]
+    public void PredictionCacheIsInvalidatedAfterUpdate()
+    {
+        using var model = new NGramModel(new[] { 1, 2 });
+        var context = new[] { 1 };
+
+        var before = model.Predict(context, topK: 256);
+        before.Should().NotBeNull();
+        before!.Should().ContainKey(2);
+        before.Should().NotContainKey(3);
+
+        model.Update(new[] { 1, 3 });
+
+        var after = model.Predict(context, topK: 256);
+        after.Should().NotBeNull();
+        after!.Should().ContainKey(2);
+        after.Should().ContainKey(3);
+    }
+
+    [Fact]
+    public void PredictionCacheSeparatesSmoothingValues()
+    {
+        using var model = new NGramModel(new[] { 1, 2, 1, 2 });
+        var context = new[] { 1 };
+
+        var unsmoothed = model.Predict(context, topK: 256, smoothing: 0.0);
+        var smoothed = model.Predict(context, topK: 256, smoothing: 1.0);
+
+        unsmoothed.Should().NotBeNull();
+        smoothed.Should().NotBeNull();
+        unsmoothed!.Should().NotContainKey(3);
+        smoothed!.Should().ContainKey(3);
+    }
+
+    [Fact]
+    public void RareSpecificContextInterpolatesWithBroaderSuffixEvidence()
+    {
+        int[] corpus =
+        [
+            9, 1, 2, 3,
+            8, 2, 4,
+            7, 2, 4,
+            6, 2, 4,
+            5, 2, 4,
+        ];
+        using var model = new NGramModel(corpus);
+        var probabilities = model.Predict(new[] { 1, 2 }, topK: 256)
+            ?? throw new InvalidOperationException("Expected a prediction distribution.");
+
+        probabilities[3].Should().BeGreaterThan(0.42);
+        probabilities[4].Should().BeGreaterThan(0.38);
+        Math.Abs(probabilities.Values.Sum() - 1.0).Should().BeLessThanOrEqualTo(0.01);
+    }
+
+    [Fact]
     public void PredictNoMatchFallsBackToUnigrams()
     {
         using var model = new NGramModel(new List<int> { 1, 2, 3 });

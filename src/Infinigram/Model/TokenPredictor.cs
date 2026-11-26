@@ -1,11 +1,14 @@
+using System.Collections.ObjectModel;
+
 namespace Infinigram;
 
 internal static class TokenPredictor
 {
-    private const int StrongEvidenceThreshold = 64;
-    private const double BackoffStrength = 4.0;
+    private const int MaximumBackoffLevels = 8;
+    private const double MaximumBackoffMass = 0.05;
 
-    internal static IReadOnlyDictionary<int, double>? Predict(NGramModel model, IReadOnlyList<int> context, int topK = 50, double smoothing = 0.0)
+    internal static IReadOnlyDictionary<int, double>? Predict(
+        NGramModel model, IReadOnlyList<int> context, int topK = 50, double smoothing = 0.0)
     {
         ArgumentNullException.ThrowIfNull(context);
         if (topK < 1)
@@ -30,68 +33,199 @@ internal static class TokenPredictor
         return probabilities;
     }
 
-    internal static Dictionary<int, double>? GetDistribution(
+    internal static IReadOnlyDictionary<int, double>? GetDistribution(
         NGramModel model, IReadOnlyList<int> context, double smoothing)
     {
-        var counts = model.Continuations(context);
-        if (counts is null && context.Count > 0)
+        if (model.TryGetPredictionDistribution(context, smoothing, out var cached))
         {
-            counts = model.Continuations(Array.Empty<int>());
+            return cached;
         }
-        if (counts is null)
+
+        var distribution = BuildDistribution(model, context, smoothing);
+        if (distribution is null)
         {
             return null;
         }
 
-        var distribution = ToProbabilities(counts, model.VocabSize, smoothing);
+        var readOnlyDistribution = new ReadOnlyDictionary<int, double>(distribution);
+        model.CachePredictionDistribution(context, smoothing, readOnlyDistribution);
+        return readOnlyDistribution;
+    }
+
+    private static Dictionary<int, double>? BuildDistribution(
+        NGramModel model, IReadOnlyList<int> context, double smoothing)
+    {
         if (context.Count == 0)
         {
-            return distribution;
+            return GetUnigramDistribution(model, smoothing);
         }
 
-        int evidence = counts.Values.Sum();
-        if (evidence >= StrongEvidenceThreshold)
+        var exactCounts = model.ContinuationsExact(context);
+        int longestMatchLength;
+        if (exactCounts is { Count: > 0 })
         {
-            return distribution;
-        }
+            longestMatchLength = model.MaxLength is int max && max > 0
+                ? Math.Min(context.Count, max)
+                : context.Count;
 
-        var shorterContext = context.Count > 1
-            ? context.Skip(1).ToArray()
-            : Array.Empty<int>();
-        var shorterCounts = model.Continuations(shorterContext);
-        if (shorterCounts is null)
-        {
-            return distribution;
-        }
-
-        var backoff = ToProbabilities(shorterCounts, model.VocabSize, smoothing);
-        double contextWeight = evidence / (evidence + BackoffStrength);
-        double backoffWeight = 1.0 - contextWeight;
-
-        foreach (var (token, probability) in backoff)
-        {
-            distribution[token] = distribution.GetValueOrDefault(token) * contextWeight
-                + probability * backoffWeight;
-        }
-
-        if (contextWeight < 1.0)
-        {
-            foreach (var token in distribution.Keys.ToArray())
+            long exactTotal = exactCounts.Values.Sum(count => (long)count);
+            double exactWeight = exactTotal / (double)(exactTotal + exactCounts.Count + 1);
+            if (1.0 - exactWeight <= MaximumBackoffMass)
             {
-                if (!backoff.ContainsKey(token))
-                {
-                    distribution[token] *= contextWeight;
-                }
+                return ToProbabilities(exactCounts, model.VocabSize, smoothing);
             }
+        }
+        else
+        {
+            var (_, matchLength) = model.LongestSuffix(context);
+            longestMatchLength = matchLength;
+        }
+
+        if (longestMatchLength == 0)
+        {
+            return GetUnigramDistribution(model, smoothing);
+        }
+
+        var orders = GetBackoffOrders(longestMatchLength);
+        var evidence = new List<(IReadOnlyDictionary<int, int> Counts, long Total, double ContextWeight)>(orders.Count);
+        Dictionary<int, double>? lowerOrderDistribution = null;
+
+        if (exactCounts is { Count: > 0 })
+        {
+            long total = exactCounts.Values.Sum(count => (long)count);
+            double contextWeight = total / (double)(total + exactCounts.Count + 1);
+            evidence.Add((exactCounts, total, contextWeight));
+        }
+
+        foreach (int order in orders)
+        {
+            if (exactCounts is { Count: > 0 } && order == longestMatchLength)
+            {
+                continue;
+            }
+
+            var suffix = GetSuffix(context, order);
+            var counts = model.ContinuationsExact(suffix);
+            if (counts is not { Count: > 0 })
+            {
+                continue;
+            }
+
+            long total = counts.Values.Sum(count => (long)count);
+            if (total == 0)
+            {
+                continue;
+            }
+
+            // Witten-Bell interpolation uses N observations and T distinct
+            // continuation types. One additional escape type keeps a single
+            // observation from receiving half of the total prediction mass.
+            double contextWeight = total / (double)(total + counts.Count + 1);
+
+            if (1.0 - contextWeight <= MaximumBackoffMass)
+            {
+                if (evidence.Count == 0)
+                {
+                    return ToProbabilities(counts, model.VocabSize, smoothing);
+                }
+
+                lowerOrderDistribution = ToProbabilities(counts, model.VocabSize, smoothing: 0.0);
+                break;
+            }
+
+            evidence.Add((counts, total, contextWeight));
+        }
+
+        // Most normal predictions have a strong exact context. Avoid copying
+        // the unigram table unless an actual backoff path needs that prior.
+        var distribution = lowerOrderDistribution ?? GetUnigramDistribution(model, smoothing);
+        if (distribution is null)
+        {
+            return null;
+        }
+
+        // Build from broad to specific so each longer context refines the
+        // distribution produced by its shorter suffix.
+        for (int i = evidence.Count - 1; i >= 0; i--)
+        {
+            var level = evidence[i];
+            distribution = Interpolate(level.Counts, level.Total, level.ContextWeight, distribution);
         }
 
         return distribution;
     }
 
-    private static Dictionary<int, double> ToProbabilities(
-        Dictionary<int, int> counts, int vocabSize, double smoothing)
+    private static Dictionary<int, double>? GetUnigramDistribution(NGramModel model, double smoothing)
     {
-        double total = counts.Values.Sum();
+        var counts = model.Continuations(Array.Empty<int>());
+        return counts is null ? null : ToProbabilities(counts, model.VocabSize, smoothing);
+    }
+
+    private static List<int> GetBackoffOrders(int longestMatchLength)
+    {
+        var orders = new List<int>(MaximumBackoffLevels + 1);
+        int order = longestMatchLength;
+
+        for (int level = 0; level < MaximumBackoffLevels && order > 0; level++)
+        {
+            orders.Add(order);
+            if (order == 1)
+            {
+                break;
+            }
+
+            order = Math.Max(1, order / 2);
+        }
+
+        // Always include the one-token context as the broadest n-gram level.
+        if (orders.Count > 0 && orders[^1] != 1)
+        {
+            orders.Add(1);
+        }
+
+        return orders;
+    }
+
+    private static int[] GetSuffix(IReadOnlyList<int> context, int length)
+    {
+        var suffix = new int[length];
+        int start = context.Count - length;
+        for (int i = 0; i < length; i++)
+        {
+            suffix[i] = context[start + i];
+        }
+
+        return suffix;
+    }
+
+    private static Dictionary<int, double> Interpolate(
+        IReadOnlyDictionary<int, int> counts,
+        long total,
+        double contextWeight,
+        Dictionary<int, double> lowerOrder)
+    {
+        double lowerOrderWeight = 1.0 - contextWeight;
+        var probabilities = new Dictionary<int, double>(lowerOrder.Count + counts.Count);
+
+        foreach (var (token, probability) in lowerOrder)
+        {
+            probabilities[token] = probability * lowerOrderWeight;
+        }
+
+        foreach (var (token, count) in counts)
+        {
+            double maximumLikelihood = count / (double)total;
+            probabilities[token] = probabilities.GetValueOrDefault(token)
+                + contextWeight * maximumLikelihood;
+        }
+
+        return probabilities;
+    }
+
+    private static Dictionary<int, double> ToProbabilities(
+        IReadOnlyDictionary<int, int> counts, int vocabSize, double smoothing)
+    {
+        double total = counts.Values.Sum(count => (double)count);
         double smoothedTotal = total + smoothing * vocabSize;
         var probabilities = new Dictionary<int, double>(counts.Count);
 
