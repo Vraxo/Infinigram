@@ -66,7 +66,7 @@ internal static class GenerationExperimentRunner
                             noveltyWindow: 256).ToArray();
 
                         GenerationEvaluation evaluation = GenerationMetrics.Evaluate(
-                            model, generated, minimumSpan: 32);
+                            model, prompt, generated, minimumSpan: 32);
                         string generatedText = model.Tokenizer.Decode(generated);
 
                         rows.Add(string.Join(",",
