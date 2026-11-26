@@ -39,6 +39,10 @@ public class GenerationBenchmarks
     public GenerationOverlap MeasureCorpusOverlap() =>
         GenerationMetrics.MeasureOverlap(_model, _generated, minimumSpan: 8);
 
+    [Benchmark]
+    public GenerationEvaluation EvaluateGeneratedOutput() =>
+        GenerationMetrics.Evaluate(_model, _generated, minimumSpan: 8);
+
     [GlobalCleanup]
     public void Cleanup() => _model?.Dispose();
 }
