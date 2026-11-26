@@ -211,7 +211,7 @@ public sealed class CorpusWordIndex
         }
 
         Random random = rng ?? Random.Shared;
-        SentenceShape? shape = SampleSentenceShape(random, maxWords);
+        SentenceShape? shape = SampleSentenceShape(current, random, maxWords);
         if (shape is null || _wordUnigramCounts.Count == 0)
         {
             return context;
@@ -605,39 +605,138 @@ public sealed class CorpusWordIndex
         return (sentenceCount, counts.Values.ToArray());
     }
 
-    private SentenceShape? SampleSentenceShape(Random random, int maxWords)
+    private SentenceShape? SampleSentenceShape(
+        List<int> context, Random random, int maxWords)
     {
-        int total = 0;
-        foreach (var shape in _sentenceShapes)
-        {
-            if (shape.WordCount <= maxWords)
-            {
-                total += shape.Count;
-            }
-        }
+        var shapes = _sentenceShapes
+            .Where(shape => shape.WordCount <= maxWords)
+            .ToDictionary(ShapeKey, shape => (Shape: shape, Count: shape.Count),
+                StringComparer.Ordinal);
 
-        if (total == 0)
+        if (shapes.Count == 0)
         {
             return null;
         }
 
-        int selected = random.Next(total);
-        foreach (var shape in _sentenceShapes)
+        long globalTotal = shapes.Values.Sum(candidate => (long)candidate.Count);
+        var probabilities = shapes.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.Count / (double)globalTotal,
+            StringComparer.Ordinal);
+
+        int maximumContext = Math.Min(MaximumPhraseContextWords, context.Count);
+        for (int contextLength = 1; contextLength <= maximumContext; contextLength++)
         {
-            if (shape.WordCount > maxWords)
+            var suffix = context.GetRange(context.Count - contextLength, contextLength);
+            var observed = new Dictionary<string, (SentenceShape Shape, int Count)>(
+                StringComparer.Ordinal);
+
+            foreach (int position in _suffixArray.SearchSampled(suffix, PhraseSearchLimit))
+            {
+                SentenceShape? shape = ReadFollowingSentenceShape(
+                    position + contextLength, maxWords);
+                if (shape is null)
+                {
+                    continue;
+                }
+
+                string key = ShapeKey(shape);
+                if (observed.TryGetValue(key, out var existing))
+                {
+                    observed[key] = (existing.Shape, existing.Count + 1);
+                }
+                else
+                {
+                    observed.Add(key, (shape, 1));
+                }
+            }
+
+            if (observed.Count == 0)
             {
                 continue;
             }
 
-            if (selected < shape.Count)
+            long total = observed.Values.Sum(candidate => (long)candidate.Count);
+            double contextWeight = total / (double)(total + observed.Count);
+            foreach (string key in probabilities.Keys.ToArray())
             {
-                return shape;
+                probabilities[key] *= 1.0 - contextWeight;
             }
-            selected -= shape.Count;
+
+            foreach (var (key, candidate) in observed)
+            {
+                probabilities[key] = probabilities.GetValueOrDefault(key)
+                    + contextWeight * candidate.Count / total;
+                shapes[key] = (candidate.Shape, candidate.Count);
+            }
+        }
+
+        var distribution = new Dictionary<int, double>(probabilities.Count);
+        var selectedShapes = new List<SentenceShape>(probabilities.Count);
+        foreach (var (key, probability) in probabilities)
+        {
+            if (probability <= 0.0 || !shapes.TryGetValue(key, out var candidate))
+            {
+                continue;
+            }
+
+            distribution[selectedShapes.Count] = probability;
+            selectedShapes.Add(candidate.Shape);
+        }
+
+        return distribution.Count == 0
+            ? null
+            : selectedShapes[Sampling.SampleFromDistribution(distribution, 1.0, random)];
+    }
+
+    private SentenceShape? ReadFollowingSentenceShape(int position, int maxWords)
+    {
+        var clauseLengths = new List<int>();
+        var separators = new List<string>();
+        int clauseWords = 0;
+        int totalWords = 0;
+
+        for (int i = position; i < _suffixArray.Length; i++)
+        {
+            string token = _vocabulary[_suffixArray.GetToken(i)];
+            if (IsSentenceEnding(token))
+            {
+                if (clauseWords > 0)
+                {
+                    clauseLengths.Add(clauseWords);
+                }
+
+                if (totalWords == 0 || totalWords > maxWords || clauseLengths.Count == 0)
+                {
+                    return null;
+                }
+
+                return new SentenceShape(
+                    clauseLengths.ToArray(), separators.ToArray(), token, 1);
+            }
+
+            if (IsClauseSeparator(token) && clauseWords > 0)
+            {
+                clauseLengths.Add(clauseWords);
+                separators.Add(token);
+                clauseWords = 0;
+            }
+            else if (IsWordToken(token))
+            {
+                clauseWords++;
+                totalWords++;
+                if (totalWords > maxWords)
+                {
+                    return null;
+                }
+            }
         }
 
         return null;
     }
+
+    private static string ShapeKey(SentenceShape shape) =>
+        $"{string.Join(",", shape.ClauseLengths)}|{string.Join("|", shape.Separators)}|{shape.Ending}";
 
     private static void AppendToken(StringBuilder output, string token)
     {
