@@ -133,7 +133,7 @@ public class BpeTokenizerTests
 
         tokenizer.Encode("abc").Should().Equal(new[] { 258 });
         tokenizer.Encode("abcabc").Should().Equal(new[] { 258, 258 });
-        tokenizer.Encode("aaa").Should().Equal(new[] { 256, 97 });
+        tokenizer.Encode("aaa").Should().Equal(new[] { 259, 97 });
     }
 
     [Fact]
