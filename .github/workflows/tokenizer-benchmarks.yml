@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "benchmarks/**"
+      - "Resources/Corpora/**"
       - "src/**"
       - ".github/workflows/tokenizer-benchmarks.yml"
   workflow_dispatch:

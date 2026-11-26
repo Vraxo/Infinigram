@@ -8,5 +8,6 @@
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.16.0-preview.2" />
     <ProjectReference Include="../../src/Infinigram/Infinigram.csproj" />
+    <None Include="../../Resources/Corpora/**/*" Link="Resources/Corpora/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
