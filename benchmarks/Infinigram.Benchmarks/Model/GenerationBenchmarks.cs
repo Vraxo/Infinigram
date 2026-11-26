@@ -14,6 +14,7 @@ public class GenerationBenchmarks
 
     private NGramModel _model = null!;
     private int[] _context = null!;
+    private int[] _generated = null!;
 
     [GlobalSetup]
     public void Setup()
@@ -21,7 +22,8 @@ public class GenerationBenchmarks
         var corpus = CorpusData.Create(CorpusBytes);
         _model = new NGramModel(corpus);
         _context = CorpusData.Context(corpus, 16);
-        if (_model.Generate(_context, maxTokens: OutputBytes, temperature: 0).Count != OutputBytes)
+        _generated = _model.Generate(_context, maxTokens: OutputBytes, temperature: 0).ToArray();
+        if (_generated.Length != OutputBytes)
             throw new InvalidOperationException("Generation stopped before the configured output length.");
         _model.ClearCache();
     }
@@ -32,6 +34,10 @@ public class GenerationBenchmarks
         _model.ClearCache();
         return _model.Generate(_context, maxTokens: OutputBytes, temperature: 0);
     }
+
+    [Benchmark]
+    public GenerationOverlap MeasureCorpusOverlap() =>
+        GenerationMetrics.MeasureOverlap(_model, _generated, minimumSpan: 8);
 
     [GlobalCleanup]
     public void Cleanup() => _model?.Dispose();
