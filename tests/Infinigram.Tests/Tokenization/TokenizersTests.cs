@@ -121,6 +121,22 @@ public class BpeTokenizerTests
     }
 
     [Fact]
+    public void EncodeRespectsMergeRankAndLeftToRightOverlap()
+    {
+        var tokenizer = BpeTokenizer.FromMerges(new[]
+        {
+            (97, 98),
+            (98, 99),
+            (256, 99),
+            (97, 97)
+        });
+
+        tokenizer.Encode("abc").Should().Equal(new[] { 258 });
+        tokenizer.Encode("abcabc").Should().Equal(new[] { 258, 258 });
+        tokenizer.Encode("aaa").Should().Equal(new[] { 256, 97 });
+    }
+
+    [Fact]
     public void VocabularyAlwaysIncludesEveryByte()
     {
         var tokenizer = BpeTokenizer.Train("abcabcabc", vocabSize: 256);
