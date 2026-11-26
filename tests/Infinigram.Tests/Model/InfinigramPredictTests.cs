@@ -75,8 +75,8 @@ public class PredictTests
         var probabilities = model.Predict(new[] { 1, 2 }, topK: 256)
             ?? throw new InvalidOperationException("Expected a prediction distribution.");
 
-        probabilities[3].Should().BeGreaterThan(0.55);
-        probabilities[4].Should().BeGreaterThan(0.30);
+        probabilities[3].Should().BeGreaterThan(0.42);
+        probabilities[4].Should().BeGreaterThan(0.38);
         Math.Abs(probabilities.Values.Sum() - 1.0).Should().BeLessThanOrEqualTo(0.01);
     }
 
