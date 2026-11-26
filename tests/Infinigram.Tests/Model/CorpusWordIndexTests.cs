@@ -167,6 +167,26 @@ public class CorpusWordIndexTests
     }
 
     [Fact]
+    public void SentenceShapesInterpolateAcrossPromptContextLengths()
+    {
+        using var model = new NGramModel(
+            "alpha beta gamma sleeps. omega beta gamma runs, jumps!");
+        var words = model.CreateWordIndex();
+
+        var generated = Enumerable.Range(1, 128)
+            .Select(seed => words.GenerateStructuredText(
+                "alpha beta gamma",
+                maxWords: 5,
+                temperature: 1.0,
+                topK: null,
+                rng: new Random(seed)))
+            .ToArray();
+
+        generated.Any(text => text.EndsWith(".", StringComparison.Ordinal)).Should().BeTrue();
+        generated.Any(text => text.EndsWith("!", StringComparison.Ordinal)).Should().BeTrue();
+    }
+
+    [Fact]
     public void StructuredGenerationUsesOnlyObservedPhraseChunks()
     {
         using var model = new NGramModel(
