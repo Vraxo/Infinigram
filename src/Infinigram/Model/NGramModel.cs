@@ -158,6 +158,19 @@ public sealed class NGramModel : IDisposable
         return _continuations.Get(_sa, SuffixMatcher.LimitContext(context, MaxLength), limit);
     }
 
+    internal Dictionary<int, int>? ContinuationsExact(
+        IReadOnlyList<int> context, int? limit = DefaultContinuationLimit)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(context);
+        if (context.Count == 0)
+        {
+            return null;
+        }
+
+        return _continuations.GetExact(_sa, SuffixMatcher.LimitContext(context, MaxLength), limit);
+    }
+
     public void ClearCache() => _continuations.Clear();
 
     internal int ContinuationsCacheCount => _continuations.Count;
