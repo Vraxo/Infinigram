@@ -9,6 +9,7 @@ namespace Infinigram;
 /// </summary>
 public sealed class CorpusWordIndex
 {
+    /// <summary>Maximum corpus occurrences sampled for a continuation query by default.</summary>
     public const int DefaultContinuationLimit = 10000;
 
     private const int MaximumContextWords = 12;
@@ -115,7 +116,7 @@ public sealed class CorpusWordIndex
 
     /// <summary>
     /// Generates a word-level continuation by sampling only tokens observed in this corpus.
-    /// Whitespace is normalized to single spaces; punctuation is attached conventionally.
+    /// Generated-token spacing is normalized; punctuation is attached conventionally.
     /// </summary>
     public string GenerateText(
         string context = "",
