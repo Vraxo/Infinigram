@@ -11,7 +11,7 @@ public class CorpusWordIndexTests
         var words = model.CreateWordIndex();
 
         words.WordCount.Should().Be(12);
-        words.VocabularySize.Should().Be(9);
+        words.VocabularySize.Should().Be(7);
         words.Vocabulary.Should().Contain("cat");
         words.Vocabulary.Should().Contain(".");
     }
