@@ -186,7 +186,7 @@ internal static class GenerationExperimentRunner
 
                     rows.Add(string.Join(",",
                         Csv(Path.GetFileName(corpusPath)),
-                        "word-structured",
+                        "word-phrase-structured",
                         wordIndex.VocabularySize.ToString(CultureInfo.InvariantCulture),
                         trainingBytes.Length.ToString(CultureInfo.InvariantCulture),
                         promptIndex.ToString(CultureInfo.InvariantCulture),
@@ -204,7 +204,7 @@ internal static class GenerationExperimentRunner
             }
 
             Console.WriteLine(
-                $"Evaluated {Path.GetFileName(corpusPath)} with word-index and sentence-structure generation " +
+                $"Evaluated {Path.GetFileName(corpusPath)} with word-index and phrase-structured generation " +
                 $"({wordIndex.WordCount:N0} word tokens, {wordIndex.SentenceShapeCount:N0} observed shapes).");
         }
 
