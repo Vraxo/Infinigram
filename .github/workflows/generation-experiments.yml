@@ -1,0 +1,47 @@
+name: Generation experiments
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "benchmarks/Infinigram.Benchmarks/Runner/**"
+      - "benchmarks/Infinigram.Benchmarks/Model/**"
+      - "benchmarks/Infinigram.Benchmarks/Infinigram.Benchmarks.csproj"
+      - "src/Infinigram/Model/**"
+      - "Resources/Corpora/**"
+      - ".github/workflows/generation-experiments.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generation-experiments:
+    name: Compare decoding configurations
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 11.0.x
+          cache: true
+          cache-dependency-path: "**/*.csproj"
+
+      - name: Run generation experiments
+        run: >-
+          dotnet run --configuration Release
+          --project benchmarks/Infinigram.Benchmarks/Infinigram.Benchmarks.csproj
+          --
+          --evaluate-generation
+          --output generation-evaluation.csv
+
+      - name: Upload generation results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: generation-evaluation-results
+          path: generation-evaluation.csv
+          if-no-files-found: warn
+          retention-days: 30
