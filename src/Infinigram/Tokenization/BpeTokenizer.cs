@@ -243,36 +243,34 @@ public sealed class BpeTokenizer : ITokenizer, IEquatable<BpeTokenizer>
         }
 
         int length = bytes.Length;
+        if (_merges.Length == 0 || length == 1)
+        {
+            return ConvertBytes(bytes);
+        }
+
         var tokens = new int[length];
         var previous = new int[length];
         var next = new int[length];
         var generations = new int[length];
-        var alive = new bool[length];
-        var pending = new PriorityQueue<PendingMerge, (int Rank, int Position)>();
+        var pending = new PendingMergeHeap(length);
 
         for (int i = 0; i < length; i++)
         {
             tokens[i] = bytes[i];
             previous[i] = i - 1;
             next[i] = i + 1 < length ? i + 1 : -1;
-            alive[i] = true;
         }
 
         void QueuePair(int left)
         {
-            if (left < 0)
+            if (left < 0 || next[left] == PendingMergeHeap.Removed)
             {
                 return;
             }
 
             int generation = ++generations[left];
-            if (!alive[left])
-            {
-                return;
-            }
-
             int right = next[left];
-            if (right < 0 || !alive[right])
+            if (right < 0)
             {
                 return;
             }
@@ -280,9 +278,7 @@ public sealed class BpeTokenizer : ITokenizer, IEquatable<BpeTokenizer>
             long key = PairKey(tokens[left], tokens[right]);
             if (_rulesByPair.TryGetValue(key, out MergeRule rule))
             {
-                pending.Enqueue(
-                    new PendingMerge(left, generation, rule.Rank),
-                    (rule.Rank, left));
+                pending.Enqueue(new PendingMerge(left, generation, rule.Rank));
             }
         }
 
@@ -291,31 +287,22 @@ public sealed class BpeTokenizer : ITokenizer, IEquatable<BpeTokenizer>
             QueuePair(i);
         }
 
-        while (pending.TryDequeue(out PendingMerge candidate, out _))
+        while (pending.TryDequeue(out PendingMerge candidate))
         {
             int left = candidate.Position;
-            if (!alive[left] || generations[left] != candidate.Generation)
+            if (generations[left] != candidate.Generation)
             {
                 continue;
             }
 
             int right = next[left];
-            if (right < 0 || !alive[right])
-            {
-                continue;
-            }
-
-            long key = PairKey(tokens[left], tokens[right]);
-            if (!_rulesByPair.TryGetValue(key, out MergeRule rule) ||
-                rule.Rank != candidate.Rank)
+            if (right < 0)
             {
                 continue;
             }
 
             int after = next[right];
-            tokens[left] = rule.TokenId;
-            alive[right] = false;
-            generations[right]++;
+            tokens[left] = ByteVocabularySize + candidate.Rank;
             next[left] = after;
 
             if (after >= 0)
@@ -323,26 +310,39 @@ public sealed class BpeTokenizer : ITokenizer, IEquatable<BpeTokenizer>
                 previous[after] = left;
             }
 
+            generations[right]++;
+            previous[right] = -1;
+            next[right] = PendingMergeHeap.Removed;
+
             QueuePair(previous[left]);
             QueuePair(left);
         }
 
-        var encoded = new List<int>(bytes.Length);
-        for (int i = 0; i < length; i++)
+        int encodedCount = 0;
+        for (int current = 0; current >= 0; current = next[current])
         {
-            if (!alive[i] || previous[i] != -1)
-            {
-                continue;
-            }
+            encodedCount++;
+        }
 
-            for (int current = i; current >= 0; current = next[current])
-            {
-                encoded.Add(tokens[current]);
-            }
-            break;
+        var encoded = new int[encodedCount];
+        int outputIndex = 0;
+        for (int current = 0; current >= 0; current = next[current])
+        {
+            encoded[outputIndex++] = tokens[current];
         }
 
         return encoded;
+    }
+
+    private static int[] ConvertBytes(byte[] bytes)
+    {
+        var tokens = new int[bytes.Length];
+        for (int i = 0; i < bytes.Length; i++)
+        {
+            tokens[i] = bytes[i];
+        }
+
+        return tokens;
     }
 
     public string Decode(IReadOnlyList<int> tokens)
@@ -419,6 +419,91 @@ public sealed class BpeTokenizer : ITokenizer, IEquatable<BpeTokenizer>
     private readonly record struct MergeRule(int Rank, int TokenId);
 
     private readonly record struct PendingMerge(int Position, int Generation, int Rank);
+
+    private struct PendingMergeHeap
+    {
+        internal const int Removed = -2;
+
+        private PendingMerge[] _items;
+        private int _count;
+
+        internal PendingMergeHeap(int capacity)
+        {
+            _items = new PendingMerge[Math.Max(4, capacity)];
+            _count = 0;
+        }
+
+        internal void Enqueue(PendingMerge item)
+        {
+            if (_count == _items.Length)
+            {
+                Array.Resize(ref _items, checked(_items.Length * 2));
+            }
+
+            int index = _count++;
+            while (index > 0)
+            {
+                int parent = (index - 1) >> 1;
+                if (!ComesBefore(item, _items[parent]))
+                {
+                    break;
+                }
+
+                _items[index] = _items[parent];
+                index = parent;
+            }
+
+            _items[index] = item;
+        }
+
+        internal bool TryDequeue(out PendingMerge item)
+        {
+            if (_count == 0)
+            {
+                item = default;
+                return false;
+            }
+
+            item = _items[0];
+            int remaining = --_count;
+            if (remaining == 0)
+            {
+                return true;
+            }
+
+            PendingMerge last = _items[remaining];
+            int index = 0;
+
+            while (true)
+            {
+                int left = (index << 1) + 1;
+                if (left >= remaining)
+                {
+                    break;
+                }
+
+                int right = left + 1;
+                int child = right < remaining && ComesBefore(_items[right], _items[left])
+                    ? right
+                    : left;
+
+                if (!ComesBefore(_items[child], last))
+                {
+                    break;
+                }
+
+                _items[index] = _items[child];
+                index = child;
+            }
+
+            _items[index] = last;
+            return true;
+        }
+
+        private static bool ComesBefore(PendingMerge left, PendingMerge right) =>
+            left.Rank < right.Rank ||
+            left.Rank == right.Rank && left.Position < right.Position;
+    }
 
     private readonly record struct PairCandidate(long Key, int Count);
 
