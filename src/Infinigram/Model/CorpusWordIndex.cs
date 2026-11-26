@@ -447,7 +447,7 @@ public sealed class CorpusWordIndex
                     sentenceCount++;
                     if (sentenceWords <= MaximumIndexedSentenceWords && clauseLengths.Count > 0)
                     {
-                        string key = $"{string.Join(',', clauseLengths)}|{string.Join('|', separators)}|{token}";
+                        string key = $"{string.Join(",", clauseLengths)}|{string.Join("|", separators)}|{token}";
                         if (counts.TryGetValue(key, out var existing))
                         {
                             counts[key] = existing with { Count = existing.Count + 1 };
