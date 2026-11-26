@@ -211,6 +211,11 @@ public sealed class CorpusWordIndex
     private Dictionary<int, double> ToProbabilities(
         IReadOnlyDictionary<int, int> counts, int? topK)
     {
+        if (counts.Count == 0 || _vocabulary.Length == 0)
+        {
+            return new Dictionary<int, double>();
+        }
+
         IEnumerable<KeyValuePair<int, int>> selected = counts;
         if (topK is int limit)
         {
