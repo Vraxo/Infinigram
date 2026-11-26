@@ -146,3 +146,45 @@ public class GenerationMetricsTests
         invalidSpan.Should().Throw<ArgumentOutOfRangeException>();
     }
 }
+
+public class GenerationEvaluationTests
+{
+    [Fact]
+    public void ReportsOverlapAndMeanModelLogProbability()
+    {
+        const string corpus = "A sufficiently distinct sentence for generation evaluation.";
+        using var model = new NGramModel(corpus);
+        var tokens = model.Tokenizer.Encode(corpus);
+
+        var evaluation = GenerationMetrics.Evaluate(model, tokens, minimumSpan: 8);
+
+        evaluation.Overlap.GeneratedTokens.Should().Be(tokens.Count);
+        evaluation.Overlap.MatchedRatio.Should().Be(1.0);
+        evaluation.MeanLogProbability.Should().BeLessThan(0.0);
+        double.IsFinite(evaluation.MeanLogProbability).Should().BeTrue();
+    }
+
+    [Fact]
+    public void EmptyOutputHasNeutralEvaluation()
+    {
+        using var model = new NGramModel("evaluation corpus");
+
+        var evaluation = GenerationMetrics.Evaluate(model, Array.Empty<int>());
+
+        evaluation.Overlap.Should().Be(new GenerationOverlap(0, 0, 0));
+        evaluation.MeanLogProbability.Should().Be(0.0);
+    }
+
+    [Fact]
+    public void RejectsInvalidSmoothing()
+    {
+        using var model = new NGramModel("evaluation corpus");
+        var tokens = model.Tokenizer.Encode("evaluation");
+
+        Action negative = () => GenerationMetrics.Evaluate(model, tokens, smoothing: -1);
+        Action infinite = () => GenerationMetrics.Evaluate(model, tokens, smoothing: double.PositiveInfinity);
+
+        negative.Should().Throw<ArgumentOutOfRangeException>();
+        infinite.Should().Throw<ArgumentOutOfRangeException>();
+    }
+}
