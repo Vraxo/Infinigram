@@ -12,3 +12,4 @@ BenchmarkDotNet.Artifacts/
 *.user
 *.suo
 *.sqlite
+generation-evaluation.csv
