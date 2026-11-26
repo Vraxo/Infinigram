@@ -131,7 +131,7 @@ public sealed class NGramModel : IDisposable
         }
 
         var ctx = SuffixMatcher.LimitContext(context, MaxLength);
-        var (length, position) = SuffixMatcher.LongestMatchLength(_sa, ctx);
+        var (length, position) = _continuations.GetLongestMatch(_sa, ctx);
         return length == 0 ? (-1, 0) : (position, length);
     }
 
