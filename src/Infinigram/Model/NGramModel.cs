@@ -158,7 +158,7 @@ public sealed class NGramModel : IDisposable
         return _continuations.Get(_sa, SuffixMatcher.LimitContext(context, MaxLength), limit);
     }
 
-    internal Dictionary<int, int>? ContinuationsExact(
+    internal IReadOnlyDictionary<int, int>? ContinuationsExact(
         IReadOnlyList<int> context, int? limit = DefaultContinuationLimit)
     {
         ThrowIfDisposed();
