@@ -10,6 +10,7 @@ internal static class GenerationExperimentRunner
     private const int PromptLength = 48;
     private const int OutputLength = 96;
     private const int Seed = 1729;
+    private const double TrainingFraction = 0.8;
 
     internal static void Run(string[] args)
     {
@@ -31,20 +32,29 @@ internal static class GenerationExperimentRunner
 
         var rows = new List<string>
         {
-            "corpus,prompt,temperature,repetition_penalty,seed,generated_tokens,matched_ratio,longest_match,mean_log_probability,generated_text"
+            "corpus,training_tokens,prompt,prompt_offset,temperature,repetition_penalty,seed,generated_tokens,matched_ratio,longest_match,mean_log_probability,generated_text"
         };
 
         foreach (string corpusPath in corpusPaths)
         {
             byte[] corpus = File.ReadAllBytes(corpusPath);
-            if (corpus.Length < PromptLength + OutputLength)
+            int trainingLength = (int)(corpus.Length * TrainingFraction);
+            int validationStart = trainingLength;
+            int validationSpan = corpus.Length - validationStart - PromptLength - OutputLength;
+            if (validationSpan < 0 || trainingLength == 0)
             {
-                Console.Error.WriteLine($"Skipping {Path.GetFileName(corpusPath)}: corpus is too small.");
+                Console.Error.WriteLine($"Skipping {Path.GetFileName(corpusPath)}: corpus is too small for an 80/20 holdout.");
                 continue;
             }
 
-            using var model = new NGramModel(corpus);
-            int[] promptStarts = [corpus.Length / 10, corpus.Length / 2, corpus.Length * 9 / 10];
+            byte[] trainingCorpus = corpus.AsSpan(0, trainingLength).ToArray();
+            using var model = new NGramModel(trainingCorpus);
+            int[] promptStarts =
+            [
+                validationStart + validationSpan / 10,
+                validationStart + validationSpan / 2,
+                validationStart + validationSpan * 9 / 10
+            ];
 
             for (int promptIndex = 0; promptIndex < promptStarts.Length; promptIndex++)
             {
@@ -71,7 +81,9 @@ internal static class GenerationExperimentRunner
 
                         rows.Add(string.Join(",",
                             Csv(Path.GetFileName(corpusPath)),
+                            trainingLength.ToString(CultureInfo.InvariantCulture),
                             promptIndex.ToString(CultureInfo.InvariantCulture),
+                            (start - validationStart).ToString(CultureInfo.InvariantCulture),
                             temperature.ToString("0.##", CultureInfo.InvariantCulture),
                             penalty.ToString("0.##", CultureInfo.InvariantCulture),
                             runSeed.ToString(CultureInfo.InvariantCulture),
@@ -84,14 +96,15 @@ internal static class GenerationExperimentRunner
                 }
             }
 
-            Console.WriteLine($"Evaluated {Path.GetFileName(corpusPath)}.");
+            Console.WriteLine($"Evaluated {Path.GetFileName(corpusPath)} using {trainingLength:N0} training bytes and a held-out tail.");
         }
 
         string fullOutputPath = Path.GetFullPath(outputPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullOutputPath)!);
         File.WriteAllText(fullOutputPath, string.Join(Environment.NewLine, rows) + Environment.NewLine, new UTF8Encoding(false));
         Console.WriteLine($"Wrote {rows.Count - 1} experiment rows to {fullOutputPath}");
-        Console.WriteLine("Compare matched_ratio/longest_match for copying and mean_log_probability for model-relative consistency; none is a human fluency score.");
+        Console.WriteLine("Prompts come from the held-out final 20%; overlap is measured only against the training partition.");
+        Console.WriteLine("Mean log-probability is a model-relative consistency signal, not a human fluency score.");
     }
 
     private static string GetOutputPath(string[] args)
