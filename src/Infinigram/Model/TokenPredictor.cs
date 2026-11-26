@@ -40,20 +40,21 @@ internal static class TokenPredictor
             return null;
         }
 
-        var distribution = ToProbabilities(unigramCounts, model.VocabSize, smoothing);
+        var unigramDistribution = ToProbabilities(unigramCounts, model.VocabSize, smoothing);
         if (context.Count == 0)
         {
-            return distribution;
+            return unigramDistribution;
         }
 
         var (_, longestMatchLength) = model.LongestSuffix(context);
         if (longestMatchLength == 0)
         {
-            return distribution;
+            return unigramDistribution;
         }
 
         var orders = GetBackoffOrders(longestMatchLength);
         var evidence = new List<(Dictionary<int, int> Counts, long Total, double ContextWeight)>(orders.Count);
+        Dictionary<int, double>? lowerOrderDistribution = null;
 
         foreach (int order in orders)
         {
@@ -70,19 +71,26 @@ internal static class TokenPredictor
                 continue;
             }
 
-            // Witten-Bell interpolation estimates how much probability mass
-            // belongs to observed continuations from N observations and T
-            // distinct continuation types.
-            double contextWeight = total / (double)(total + counts.Count);
-            evidence.Add((counts, total, contextWeight));
+            // Witten-Bell interpolation uses N observations and T distinct
+            // continuation types. One additional escape type keeps a single
+            // observation from receiving half of the total prediction mass.
+            double contextWeight = total / (double)(total + counts.Count + 1);
 
-            // The remaining lower-order mass is now small enough that another
-            // suffix-array search is unlikely to justify its prediction cost.
             if (1.0 - contextWeight <= MaximumBackoffMass)
             {
+                if (evidence.Count == 0)
+                {
+                    return ToProbabilities(counts, model.VocabSize, smoothing);
+                }
+
+                lowerOrderDistribution = ToProbabilities(counts, model.VocabSize, smoothing: 0.0);
                 break;
             }
+
+            evidence.Add((counts, total, contextWeight));
         }
+
+        var distribution = lowerOrderDistribution ?? unigramDistribution;
 
         // Build from broad to specific so each longer context refines the
         // distribution produced by its shorter suffix.
