@@ -13,6 +13,9 @@ public sealed class CorpusWordIndex
     public const int DefaultContinuationLimit = 10000;
 
     private const int MaximumContextWords = 12;
+    private const int MaximumPhraseContextWords = 3;
+    private const int MaximumPhraseLength = 3;
+    private const int PhraseSearchLimit = 1024;
     private const int MaximumBackoffLevels = 8;
     private const int MaximumIndexedSentenceWords = 128;
 
@@ -221,7 +224,7 @@ public sealed class CorpusWordIndex
             while (remainingWords > 0)
             {
                 int[]? phrase = remainingWords > 1
-                    ? SamplePhrase(current, Math.Min(3, remainingWords), temperature, random)
+                    ? SamplePhrase(current, Math.Min(MaximumPhraseLength, remainingWords), temperature, random)
                     : null;
 
                 if (phrase is not null)
@@ -302,7 +305,7 @@ public sealed class CorpusWordIndex
     private int[]? SamplePhrase(
         List<int> context, int maxPhraseWords, double temperature, Random random)
     {
-        int maximumContext = Math.Min(3, context.Count);
+        int maximumContext = Math.Min(MaximumPhraseContextWords, context.Count);
         for (int phraseLength = maxPhraseWords; phraseLength >= 2; phraseLength--)
         {
             var probabilities = new Dictionary<string, double>(StringComparer.Ordinal);
@@ -359,7 +362,7 @@ public sealed class CorpusWordIndex
         List<int> context, int contextLength, int phraseLength)
     {
         var suffix = context.GetRange(context.Count - contextLength, contextLength);
-        var positions = _suffixArray.SearchSampled(suffix, limit: 1024);
+        var positions = _suffixArray.SearchSampled(suffix, PhraseSearchLimit);
         var candidates = new Dictionary<string, PhraseCandidate>(StringComparer.Ordinal);
 
         foreach (int position in positions)
