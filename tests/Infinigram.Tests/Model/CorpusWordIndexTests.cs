@@ -139,8 +139,8 @@ public class CorpusWordIndexTests
             .Where(text => text.Length > 0)
             .ToArray();
 
-        generated.Any(text => text.EndsWith('.', StringComparison.Ordinal)).Should().BeTrue();
-        generated.Any(text => text.EndsWith('!', StringComparison.Ordinal)).Should().BeTrue();
+        generated.Any(text => text.EndsWith(".", StringComparison.Ordinal)).Should().BeTrue();
+        generated.Any(text => text.EndsWith("!", StringComparison.Ordinal)).Should().BeTrue();
 
         foreach (string text in generated)
         {
