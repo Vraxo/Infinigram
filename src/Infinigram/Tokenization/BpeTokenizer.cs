@@ -266,10 +266,6 @@ public sealed class BpeTokenizer : ITokenizer, IEquatable<BpeTokenizer>
         {
             if (left < 0 || next[left] < 0)
             {
-                if (left >= 0)
-                {
-                    pending.Remove(left);
-                }
                 return;
             }
 
@@ -277,10 +273,6 @@ public sealed class BpeTokenizer : ITokenizer, IEquatable<BpeTokenizer>
             if (_rulesByPair.TryGetValue(key, out MergeRule rule))
             {
                 pending.Set(left, rule.Rank);
-            }
-            else
-            {
-                pending.Remove(left);
             }
         }
 
@@ -302,7 +294,6 @@ public sealed class BpeTokenizer : ITokenizer, IEquatable<BpeTokenizer>
             int after = next[right];
 
             pending.Remove(before);
-            pending.Remove(left);
             pending.Remove(right);
 
             tokens[left] = ByteVocabularySize + candidate.Rank;
@@ -437,8 +428,6 @@ public sealed class BpeTokenizer : ITokenizer, IEquatable<BpeTokenizer>
 
         internal void Set(int position, int rank)
         {
-            Remove(position);
-
             int index = _count++;
             _items[index] = new PendingMerge(position, rank);
             _indices[position] = index;
