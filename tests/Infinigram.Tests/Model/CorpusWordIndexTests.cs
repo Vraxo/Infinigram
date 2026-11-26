@@ -115,6 +115,76 @@ public class CorpusWordIndexTests
     }
 
     [Fact]
+    public void ExtractsDistinctSentenceAndClauseShapesFromCorpus()
+    {
+        using var model = new NGramModel("The cat sleeps. A dog runs, jumps, and plays!");
+        var words = model.CreateWordIndex();
+
+        words.SentenceCount.Should().Be(2);
+        words.SentenceShapeCount.Should().Be(2);
+    }
+
+    [Fact]
+    public void StructuredGenerationUsesOnlyObservedSentenceLayouts()
+    {
+        using var model = new NGramModel("The cat sleeps. A dog runs, jumps, and plays!");
+        var words = model.CreateWordIndex();
+
+        var generated = Enumerable.Range(1, 128)
+            .Select(seed => words.GenerateStructuredText(
+                maxWords: 10,
+                temperature: 1.0,
+                topK: null,
+                rng: new Random(seed)))
+            .Where(text => text.Length > 0)
+            .ToArray();
+
+        generated.Should().Contain(text => text.EndsWith('.'));
+        generated.Should().Contain(text => text.EndsWith('!'));
+
+        foreach (string text in generated)
+        {
+            var tokens = CorpusWordIndex.Tokenize(text);
+            int wordCount = tokens.Count(token =>
+                token.Any(character => char.IsLetterOrDigit(character) || character == '_'));
+            int commaCount = tokens.Count(token => token == ",");
+
+            if (text.EndsWith('.'))
+            {
+                wordCount.Should().Be(3);
+                commaCount.Should().Be(0);
+            }
+            else
+            {
+                text.Should().EndWith("!");
+                wordCount.Should().Be(6);
+                commaCount.Should().Be(2);
+            }
+
+            tokens.Should().OnlyContain(token =>
+                words.Vocabulary.Contains(token, StringComparer.OrdinalIgnoreCase));
+        }
+    }
+
+    [Fact]
+    public void StructuredGenerationPreservesPromptAndRejectsUnknownTrailingContext()
+    {
+        using var model = new NGramModel("the cat sleeps. a dog runs, jumps, and plays!");
+        var words = model.CreateWordIndex();
+
+        words.GenerateStructuredText("unseen context").Should().Be("unseen context");
+
+        string generated = words.GenerateStructuredText(
+            "the cat",
+            maxWords: 10,
+            temperature: 0.0,
+            rng: new Random(42));
+
+        generated.Should().StartWith("the cat");
+        generated.Should().EndWith(".");
+    }
+
+    [Fact]
     public void TokenizeKeepsWordsAndPunctuationSeparate()
     {
         CorpusWordIndex.Tokenize("Hello, world!").Should().Equal("Hello", ",", "world", "!");
