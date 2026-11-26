@@ -184,7 +184,9 @@ public sealed class BpeTokenizer : ITokenizer, IEquatable<BpeTokenizer>
 
             int leftToken = LeftFromPairKey(candidate.Key);
             int rightToken = RightFromPairKey(candidate.Key);
-            int[] positions = pairPositions[candidate.Key].ToArray();
+            SortedSet<int> positions = pairPositions[candidate.Key];
+            rankedPairs.Remove(candidate);
+            pairPositions.Remove(candidate.Key);
             int mergedToken = ByteVocabularySize + merges.Count;
             int mergedCount = 0;
 
