@@ -217,8 +217,25 @@ public sealed class CorpusWordIndex
         var output = new StringBuilder(context);
         for (int clause = 0; clause < shape.ClauseLengths.Length; clause++)
         {
-            for (int word = 0; word < shape.ClauseLengths[clause]; word++)
+            int remainingWords = shape.ClauseLengths[clause];
+            while (remainingWords > 0)
             {
+                int[]? phrase = remainingWords > 1
+                    ? SamplePhrase(current, Math.Min(3, remainingWords), random)
+                    : null;
+
+                if (phrase is not null)
+                {
+                    foreach (int token in phrase)
+                    {
+                        AppendToken(output, _vocabulary[token]);
+                        AddContextToken(current, token);
+                    }
+
+                    remainingWords -= phrase.Length;
+                    continue;
+                }
+
                 var probabilities = BuildWordDistribution(current, topK);
                 if (probabilities.Count == 0)
                 {
@@ -228,6 +245,7 @@ public sealed class CorpusWordIndex
                 int next = Sampling.SampleFromDistribution(probabilities, temperature, random);
                 AppendToken(output, _vocabulary[next]);
                 AddContextToken(current, next);
+                remainingWords--;
             }
 
             string boundary = clause < shape.Separators.Length
@@ -279,6 +297,79 @@ public sealed class CorpusWordIndex
             ids.Add(_tokenIds[words[i]]);
         }
         return ids;
+    }
+
+    private int[]? SamplePhrase(List<int> context, int maxPhraseWords, Random random)
+    {
+        int maximumContext = Math.Min(3, context.Count);
+        for (int contextLength = maximumContext; contextLength >= 1; contextLength--)
+        {
+            var suffix = context.GetRange(context.Count - contextLength, contextLength);
+            var positions = _suffixArray.SearchSampled(suffix, DefaultContinuationLimit);
+            if (positions.Count == 0)
+            {
+                continue;
+            }
+
+            for (int phraseLength = maxPhraseWords; phraseLength >= 2; phraseLength--)
+            {
+                var candidates = new Dictionary<string, PhraseCandidate>(StringComparer.Ordinal);
+                foreach (int position in positions)
+                {
+                    int start = position + contextLength;
+                    if (start + phraseLength > _suffixArray.Length)
+                    {
+                        continue;
+                    }
+
+                    var phrase = new int[phraseLength];
+                    bool valid = true;
+                    for (int i = 0; i < phraseLength; i++)
+                    {
+                        int token = _suffixArray.GetToken(start + i);
+                        if (!_isWordToken[token])
+                        {
+                            valid = false;
+                            break;
+                        }
+                        phrase[i] = token;
+                    }
+
+                    if (!valid)
+                    {
+                        continue;
+                    }
+
+                    string key = string.Join(",", phrase);
+                    if (candidates.TryGetValue(key, out var existing))
+                    {
+                        candidates[key] = existing with { Count = existing.Count + 1 };
+                    }
+                    else
+                    {
+                        candidates.Add(key, new PhraseCandidate(phrase, 1));
+                    }
+                }
+
+                int total = candidates.Values.Sum(candidate => candidate.Count);
+                if (total == 0)
+                {
+                    continue;
+                }
+
+                int selected = random.Next(total);
+                foreach (var candidate in candidates.Values)
+                {
+                    if (selected < candidate.Count)
+                    {
+                        return candidate.Tokens;
+                    }
+                    selected -= candidate.Count;
+                }
+            }
+        }
+
+        return null;
     }
 
     private Dictionary<string, int> ToWords(IReadOnlyDictionary<int, int> counts)
@@ -540,6 +631,8 @@ public sealed class CorpusWordIndex
         }
         output.Append(token);
     }
+
+    private sealed record PhraseCandidate(int[] Tokens, int Count);
 
     private sealed record SentenceShape(
         int[] ClauseLengths, string[] Separators, string Ending, int Count)
