@@ -180,8 +180,8 @@ public sealed class CorpusWordIndex
 
     /// <summary>
     /// Generates one sentence using a clause-length and punctuation layout sampled from the corpus.
-    /// Words are generated individually from corpus continuation counts; only the sentence shape
-    /// is reused, so the resulting sentence need not occur verbatim in the corpus.
+    /// Short phrase continuations are interpolated across corpus context lengths; word-level
+    /// continuation counts provide the fallback when no observed phrase chunk fits.
     /// </summary>
     public string GenerateStructuredText(
         string context = "",
