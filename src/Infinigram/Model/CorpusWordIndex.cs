@@ -13,6 +13,7 @@ public sealed class CorpusWordIndex
     public const int DefaultContinuationLimit = 10000;
 
     private const int MaximumContextWords = 12;
+    private const int MaximumBackoffLevels = 8;
 
     private static readonly Regex TokenPattern = new(
         @"[\p{L}\p{M}\p{N}_]+(?:['’\-‐‑‒–][\p{L}\p{M}\p{N}_]+)*|[\uD800-\uDBFF][\uDC00-\uDFFF]|[^\s]",
@@ -245,7 +246,7 @@ public sealed class CorpusWordIndex
         var orders = new List<int>(5);
         int order = contextLength;
 
-        for (int level = 0; level < 4 && order > 0; level++)
+        for (int level = 0; level < MaximumBackoffLevels && order > 0; level++)
         {
             orders.Add(order);
             if (order == 1)
