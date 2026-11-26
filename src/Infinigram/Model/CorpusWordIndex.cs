@@ -221,7 +221,7 @@ public sealed class CorpusWordIndex
             while (remainingWords > 0)
             {
                 int[]? phrase = remainingWords > 1
-                    ? SamplePhrase(current, Math.Min(3, remainingWords), random)
+                    ? SamplePhrase(current, Math.Min(3, remainingWords), temperature, random)
                     : null;
 
                 if (phrase is not null)
@@ -299,77 +299,107 @@ public sealed class CorpusWordIndex
         return ids;
     }
 
-    private int[]? SamplePhrase(List<int> context, int maxPhraseWords, Random random)
+    private int[]? SamplePhrase(
+        List<int> context, int maxPhraseWords, double temperature, Random random)
     {
         int maximumContext = Math.Min(3, context.Count);
-        for (int contextLength = maximumContext; contextLength >= 1; contextLength--)
+        for (int phraseLength = maxPhraseWords; phraseLength >= 2; phraseLength--)
         {
-            var suffix = context.GetRange(context.Count - contextLength, contextLength);
-            var positions = _suffixArray.SearchSampled(suffix, DefaultContinuationLimit);
-            if (positions.Count == 0)
+            var probabilities = new Dictionary<string, double>(StringComparer.Ordinal);
+            var phraseTokens = new Dictionary<string, int[]>(StringComparer.Ordinal);
+
+            // Build from broad to specific, allowing a unique long context to
+            // retain alternatives supplied by shorter corpus contexts.
+            for (int contextLength = 1; contextLength <= maximumContext; contextLength++)
             {
-                continue;
-            }
-
-            for (int phraseLength = maxPhraseWords; phraseLength >= 2; phraseLength--)
-            {
-                var candidates = new Dictionary<string, PhraseCandidate>(StringComparer.Ordinal);
-                foreach (int position in positions)
-                {
-                    int start = position + contextLength;
-                    if (start + phraseLength > _suffixArray.Length)
-                    {
-                        continue;
-                    }
-
-                    var phrase = new int[phraseLength];
-                    bool valid = true;
-                    for (int i = 0; i < phraseLength; i++)
-                    {
-                        int token = _suffixArray.GetToken(start + i);
-                        if (!_isWordToken[token])
-                        {
-                            valid = false;
-                            break;
-                        }
-                        phrase[i] = token;
-                    }
-
-                    if (!valid)
-                    {
-                        continue;
-                    }
-
-                    string key = string.Join(",", phrase);
-                    if (candidates.TryGetValue(key, out var existing))
-                    {
-                        candidates[key] = existing with { Count = existing.Count + 1 };
-                    }
-                    else
-                    {
-                        candidates.Add(key, new PhraseCandidate(phrase, 1));
-                    }
-                }
-
-                int total = candidates.Values.Sum(candidate => candidate.Count);
-                if (total == 0)
+                var counts = GetPhraseCounts(context, contextLength, phraseLength);
+                if (counts.Count == 0)
                 {
                     continue;
                 }
 
-                int selected = random.Next(total);
-                foreach (var candidate in candidates.Values)
+                long total = counts.Values.Sum(candidate => (long)candidate.Count);
+                double contextWeight = total / (double)(total + counts.Count + 1);
+                double lowerWeight = 1.0 - contextWeight;
+
+                foreach (string key in probabilities.Keys.ToArray())
                 {
-                    if (selected < candidate.Count)
-                    {
-                        return candidate.Tokens;
-                    }
-                    selected -= candidate.Count;
+                    probabilities[key] *= lowerWeight;
+                }
+
+                foreach (var (key, candidate) in counts)
+                {
+                    double maximumLikelihood = candidate.Count / (double)total;
+                    probabilities[key] = probabilities.GetValueOrDefault(key)
+                        + contextWeight * maximumLikelihood;
+                    phraseTokens[key] = candidate.Tokens;
                 }
             }
+
+            if (probabilities.Count == 0)
+            {
+                continue;
+            }
+
+            string[] keys = probabilities.Keys.ToArray();
+            var distribution = new Dictionary<int, double>(keys.Length);
+            for (int i = 0; i < keys.Length; i++)
+            {
+                distribution[i] = probabilities[keys[i]];
+            }
+
+            int selected = Sampling.SampleFromDistribution(distribution, temperature, random);
+            return phraseTokens[keys[selected]];
         }
 
         return null;
+    }
+
+    private Dictionary<string, PhraseCandidate> GetPhraseCounts(
+        List<int> context, int contextLength, int phraseLength)
+    {
+        var suffix = context.GetRange(context.Count - contextLength, contextLength);
+        var positions = _suffixArray.SearchSampled(suffix, limit: 1024);
+        var candidates = new Dictionary<string, PhraseCandidate>(StringComparer.Ordinal);
+
+        foreach (int position in positions)
+        {
+            int start = position + contextLength;
+            if (start + phraseLength > _suffixArray.Length)
+            {
+                continue;
+            }
+
+            var phrase = new int[phraseLength];
+            bool valid = true;
+            for (int i = 0; i < phraseLength; i++)
+            {
+                int token = _suffixArray.GetToken(start + i);
+                if (!_isWordToken[token])
+                {
+                    valid = false;
+                    break;
+                }
+                phrase[i] = token;
+            }
+
+            if (!valid)
+            {
+                continue;
+            }
+
+            string key = string.Join(",", phrase);
+            if (candidates.TryGetValue(key, out var existing))
+            {
+                candidates[key] = existing with { Count = existing.Count + 1 };
+            }
+            else
+            {
+                candidates.Add(key, new PhraseCandidate(phrase, 1));
+            }
+        }
+
+        return candidates;
     }
 
     private Dictionary<string, int> ToWords(IReadOnlyDictionary<int, int> counts)
