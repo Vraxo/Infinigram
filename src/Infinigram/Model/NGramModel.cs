@@ -6,6 +6,7 @@ public sealed class NGramModel : IDisposable
 
     private SuffixArray _sa = null!;
     private readonly ContinuationCounter _continuations = new();
+    private readonly LruCache<ContextKey, IReadOnlyDictionary<int, double>> _predictionCache = new(256);
     private readonly Dictionary<int, int> _unigramCounts = new();
     private string? _modelDir;
     private bool _disposed;
@@ -171,14 +172,47 @@ public sealed class NGramModel : IDisposable
         return _continuations.GetExact(_sa, SuffixMatcher.LimitContext(context, MaxLength), limit);
     }
 
-    public void ClearCache() => _continuations.Clear();
+    public void ClearCache()
+    {
+        _continuations.Clear();
+        _predictionCache.Clear();
+    }
+
+    internal bool TryGetPredictionDistribution(
+        IReadOnlyList<int> context, double smoothing, out IReadOnlyDictionary<int, double>? distribution)
+    {
+        ThrowIfDisposed();
+        return _predictionCache.TryGet(CreatePredictionKey(context, smoothing), out distribution);
+    }
+
+    internal void CachePredictionDistribution(
+        IReadOnlyList<int> context, double smoothing, IReadOnlyDictionary<int, double> distribution)
+    {
+        ThrowIfDisposed();
+        _predictionCache.Set(CreatePredictionKey(context, smoothing), distribution);
+    }
+
+    private ContextKey CreatePredictionKey(IReadOnlyList<int> context, double smoothing)
+    {
+        IReadOnlyList<int> keyContext = context;
+        if (MaxLength is int maxLength && maxLength > 0 && context.Count > maxLength)
+        {
+            keyContext = SuffixMatcher.LimitContext(context, MaxLength);
+        }
+
+        return new ContextKey(keyContext, MaxLength, smoothing: smoothing);
+    }
 
     internal int ContinuationsCacheCount => _continuations.Count;
 
     internal int ContinuationsCacheCapacity
     {
         get => _continuations.Capacity;
-        set => _continuations.Capacity = value;
+        set
+        {
+            _continuations.Capacity = value;
+            _predictionCache.SetCapacity(value);
+        }
     }
 
     public IReadOnlyDictionary<int, double>? Predict(IReadOnlyList<int> context, int topK = 50, double smoothing = 0.0)
@@ -284,6 +318,7 @@ public sealed class NGramModel : IDisposable
         }
         _disposed = true;
         _continuations.Clear();
+        _predictionCache.Clear();
     }
 
     public override string ToString() =>
