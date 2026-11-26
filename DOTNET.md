@@ -179,6 +179,25 @@ The index is intended for text, not arbitrary binary corpora. Unknown trailing
 context tokens do not get silently skipped; generation stops when there is no
 known matching suffix.
 
+For sentence-shaped generation, use `GenerateStructuredText`:
+
+```csharp
+string sentence = words.GenerateStructuredText(
+    "the cat",
+    maxWords: 40,
+    temperature: 0.8);
+```
+
+Sentence layouts are extracted from completed corpus sentences. A layout records
+the number of words in each clause, the observed clause separators (commas,
+semicolons, colons, or dashes), and the sentence-ending punctuation. Generation
+samples a layout by its corpus frequency, then generates each word individually
+from the same word-level suffix counts and corpus-derived interpolation. The
+sentence wording is therefore recombined rather than copied as a template.
+Layouts are bounded to 128 words when indexed; `maxWords` limits the layout
+selected for generation. No grammar parser, external rules, or learned weights
+are introduced.
+
 ## Status vs. the Python reference
 
 Ported and available: suffix-array search/count, longest suffix, continuations
