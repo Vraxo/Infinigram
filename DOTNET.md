@@ -191,12 +191,14 @@ string sentence = words.GenerateStructuredText(
 Sentence layouts are extracted from completed corpus sentences. A layout records
 the number of words in each clause, the observed clause separators (commas,
 semicolons, colons, or dashes), and the sentence-ending punctuation. Generation
-samples a layout by its corpus frequency, then generates each word individually
-from the same word-level suffix counts and corpus-derived interpolation. The
-sentence wording is therefore recombined rather than copied as a template.
-Layouts are bounded to 128 words when indexed; `maxWords` limits the layout
-selected for generation. No grammar parser, external rules, or learned weights
-are introduced.
+samples a layout by its corpus frequency. Within each clause it first looks for
+two- or three-word continuations observed after the current context, using exact
+suffix-array matches. When no phrase chunk is available, it falls back to the
+word-level corpus counts and interpolation. The output recombines short observed
+phrases under a corpus-observed sentence layout rather than copying a full
+sentence. Layouts are bounded to 128 words when indexed; `maxWords` limits the
+layout selected for generation. No grammar parser, external rules, or learned
+weights are introduced.
 
 ## Status vs. the Python reference
 
