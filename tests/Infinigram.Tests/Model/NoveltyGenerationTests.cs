@@ -25,7 +25,7 @@ public class NoveltyGenerationTests
 
         var defaultResult = model.Generate(context, maxTokens: 8, temperature: 0, rng: new Random(7));
         var explicitDefault = model.Generate(context, maxTokens: 8, temperature: 0,
-            rng: new Random(7), repetitionPenalty: 1.0);
+            rng: new Random(7), repetitionPenalty: 1.15);
 
         explicitDefault.Should().Equal(defaultResult);
     }
