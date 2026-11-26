@@ -54,4 +54,38 @@ internal sealed class ContinuationCounter
         _cache.Set(cacheKey, null);
         return null;
     }
+
+    internal Dictionary<int, int>? GetExact(SuffixArray suffixArray, List<int> context, int? limit)
+    {
+        if (context.Count == 0)
+        {
+            return null;
+        }
+
+        var cacheKey = new ContextKey(context, limit, exact: true);
+        if (_cache.TryGet(cacheKey, out var cached))
+        {
+            return cached is null ? null : new Dictionary<int, int>(cached);
+        }
+
+        int length = context.Count;
+        var positions = SuffixMatcher.SearchSuffixSampled(suffixArray, context, length, limit);
+        Dictionary<int, int>? counts = null;
+
+        foreach (int position in positions)
+        {
+            int next = position + length;
+            if (next >= suffixArray.Length)
+            {
+                continue;
+            }
+
+            int token = suffixArray.GetToken(next);
+            counts ??= new Dictionary<int, int>();
+            counts[token] = counts.GetValueOrDefault(token) + 1;
+        }
+
+        _cache.Set(cacheKey, counts is { Count: > 0 } ? new Dictionary<int, int>(counts) : null);
+        return counts;
+    }
 }
