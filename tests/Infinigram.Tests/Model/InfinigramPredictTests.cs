@@ -61,6 +61,40 @@ public class PredictTests
     }
 
     [Fact]
+    public void PredictionCacheIsInvalidatedAfterUpdate()
+    {
+        using var model = new NGramModel(new[] { 1, 2 });
+        var context = new[] { 1 };
+
+        var before = model.Predict(context, topK: 256);
+        before.Should().NotBeNull();
+        before!.Should().ContainKey(2);
+        before.Should().NotContainKey(3);
+
+        model.Update(new[] { 1, 3 });
+
+        var after = model.Predict(context, topK: 256);
+        after.Should().NotBeNull();
+        after!.Should().ContainKey(2);
+        after.Should().ContainKey(3);
+    }
+
+    [Fact]
+    public void PredictionCacheSeparatesSmoothingValues()
+    {
+        using var model = new NGramModel(new[] { 1, 2, 1, 2 });
+        var context = new[] { 1 };
+
+        var unsmoothed = model.Predict(context, topK: 256, smoothing: 0.0);
+        var smoothed = model.Predict(context, topK: 256, smoothing: 1.0);
+
+        unsmoothed.Should().NotBeNull();
+        smoothed.Should().NotBeNull();
+        unsmoothed!.Should().NotContainKey(3);
+        smoothed!.Should().ContainKey(3);
+    }
+
+    [Fact]
     public void RareSpecificContextInterpolatesWithBroaderSuffixEvidence()
     {
         int[] corpus =
