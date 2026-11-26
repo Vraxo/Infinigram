@@ -243,6 +243,16 @@ public sealed class NGramModel : IDisposable
             repetitionPenalty, noveltyWindow);
     }
 
+    /// <summary>
+    /// Builds an optional word-and-punctuation suffix index from this model's corpus.
+    /// The index is derived data and does not change the byte-level model or its defaults.
+    /// </summary>
+    public CorpusWordIndex CreateWordIndex()
+    {
+        ThrowIfDisposed();
+        return new CorpusWordIndex(_sa.Corpus, Tokenizer);
+    }
+
     public double Score(IReadOnlyList<int> sequence, double smoothing = 1e-10)
     {
         ThrowIfDisposed();

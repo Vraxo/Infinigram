@@ -150,6 +150,34 @@ model, so `NGramModel.Load("my_subword_model")` restores the matching tokenizer
 without a separate tokenizer argument. Custom `ITokenizer` implementations
 remain supported, but their configuration is the caller's responsibility.
 
+## Corpus-derived word index
+
+The default model remains byte-level and is still the source of truth. For text
+corpora, callers can optionally build a second suffix index over words and
+punctuation extracted from the same decoded corpus:
+
+```csharp
+using var model = new NGramModel(corpus);
+var words = model.CreateWordIndex();
+
+var nextWords = words.Continuations("the cat");
+string continuation = words.GenerateText("the cat", maxTokens: 40);
+```
+
+This index is not a separately trained language model. Its vocabulary is made
+from tokens that occur in the corpus, its sequence is the corpus tokenized at
+word/punctuation boundaries, and its continuation counts are direct suffix-array
+counts. It stores no learned weights and can be rebuilt from the original model.
+It is created only when requested, so ordinary byte-model construction, memory
+use, and generation performance are unchanged.
+
+Word-level generation is an experimental alternative, not a replacement for
+byte generation. Whitespace is normalized when rendering generated text, and
+the most frequent corpus spelling is used for case-insensitive token variants.
+The index is intended for text, not arbitrary binary corpora. Unknown trailing
+context tokens do not get silently skipped; generation stops when there is no
+known matching suffix.
+
 ## Status vs. the Python reference
 
 Ported and available: suffix-array search/count, longest suffix, continuations
