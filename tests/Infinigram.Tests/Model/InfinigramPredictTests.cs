@@ -674,3 +674,33 @@ public class UnigramDistributionTests
         model.Score(new[] { 1 }).Should().BeGreaterThan(model.Score(new[] { 3 }));
     }
 }
+
+
+public class PromptConditionedScoreTests
+{
+    [Fact]
+    public void ScoreUsesInitialContextForTheFirstGeneratedToken()
+    {
+        using var model = new NGramModel(string.Concat(Enumerable.Repeat("abc", 100)));
+
+        double conditioned = model.Score(TestData.B("c"), TestData.B("ab"));
+        double unconditioned = model.Score(TestData.B("c"));
+
+        conditioned.Should().BeGreaterThan(unconditioned);
+        double.IsFinite(conditioned).Should().BeTrue();
+    }
+
+    [Fact]
+    public void SmoothingKeepsUnseenTokensFiniteAfterStrongBackoff()
+    {
+        var corpus = new List<int> { 9, 1, 2, 3 };
+        for (int i = 0; i < 100; i++)
+            corpus.AddRange(new[] { 8, 2, 4 });
+
+        using var model = new NGramModel(corpus);
+
+        double score = model.Score(new[] { 5 }, new[] { 1, 2 });
+
+        double.IsFinite(score).Should().BeTrue();
+    }
+}
