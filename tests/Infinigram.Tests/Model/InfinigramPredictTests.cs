@@ -72,11 +72,11 @@ public class PredictTests
             5, 2, 4,
         ];
         using var model = new NGramModel(corpus);
-        var probabilities = model.Predict(new[] { 1, 2 }, topK: 256);
+        var probabilities = model.Predict(new[] { 1, 2 }, topK: 256)
+            ?? throw new InvalidOperationException("Expected a prediction distribution.");
 
-        probabilities.Should().NotBeNull();
-        probabilities![(int)3].Should().BeGreaterThan(0.55);
-        probabilities[(int)4].Should().BeGreaterThan(0.30);
+        probabilities[3].Should().BeGreaterThan(0.55);
+        probabilities[4].Should().BeGreaterThan(0.30);
         Math.Abs(probabilities.Values.Sum() - 1.0).Should().BeLessThanOrEqualTo(0.01);
     }
 
