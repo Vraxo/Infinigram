@@ -7,8 +7,16 @@ internal static class GenerationExperimentRunner
 {
     private static readonly double[] Temperatures = [0.7, 1.0, 1.3];
     private static readonly double[] RepetitionPenalties = [1.0, 1.15, 1.5];
+    private static readonly (string Name, int VocabularySize)[] Tokenizers =
+    [
+        ("byte", 256),
+        ("bpe-1024", 1024),
+        ("bpe-4096", 4096)
+    ];
+
     private const int PromptLength = 48;
     private const int OutputLength = 96;
+    private const int MinimumSpan = 32;
     private const int Seed = 1729;
     private const double TrainingFraction = 0.8;
 
@@ -32,23 +40,23 @@ internal static class GenerationExperimentRunner
 
         var rows = new List<string>
         {
-            "corpus,training_tokens,prompt,prompt_offset,temperature,repetition_penalty,seed,generated_tokens,matched_ratio,longest_match,mean_log_probability,generated_text"
+            "corpus,tokenizer,vocab_size,training_bytes,prompt,prompt_offset,temperature,repetition_penalty,seed,generated_tokens,matched_ratio,longest_match,mean_log_probability,generated_text"
         };
 
         foreach (string corpusPath in corpusPaths)
         {
-            byte[] corpus = File.ReadAllBytes(corpusPath);
-            int trainingLength = (int)(corpus.Length * TrainingFraction);
-            int validationStart = trainingLength;
+            string corpus = File.ReadAllText(corpusPath, Encoding.UTF8);
+            int trainingCharacters = (int)(corpus.Length * TrainingFraction);
+            int validationStart = trainingCharacters;
             int validationSpan = corpus.Length - validationStart - PromptLength - OutputLength;
-            if (validationSpan < 0 || trainingLength == 0)
+            if (validationSpan < 0 || trainingCharacters == 0)
             {
                 Console.Error.WriteLine($"Skipping {Path.GetFileName(corpusPath)}: corpus is too small for an 80/20 holdout.");
                 continue;
             }
 
-            byte[] trainingCorpus = corpus.AsSpan(0, trainingLength).ToArray();
-            using var model = new NGramModel(trainingCorpus);
+            string trainingText = corpus[..trainingCharacters];
+            byte[] trainingBytes = Encoding.UTF8.GetBytes(trainingText);
             int[] promptStarts =
             [
                 validationStart + validationSpan / 10,
@@ -56,47 +64,64 @@ internal static class GenerationExperimentRunner
                 validationStart + validationSpan * 9 / 10
             ];
 
-            for (int promptIndex = 0; promptIndex < promptStarts.Length; promptIndex++)
+            foreach ((string tokenizerName, int vocabularySize) in Tokenizers)
             {
-                int start = Math.Clamp(promptStarts[promptIndex], 0, corpus.Length - PromptLength - 1);
-                int[] prompt = corpus.AsSpan(start, PromptLength).ToArray().Select(value => (int)value).ToArray();
-                int runSeed = Seed + promptIndex;
+                ITokenizer tokenizer = tokenizerName == "byte"
+                    ? new ByteTokenizer()
+                    : BpeTokenizer.Train(trainingText, vocabularySize);
 
-                foreach (double temperature in Temperatures)
+                int[] trainingTokens = tokenizer.Encode(trainingText).ToArray();
+                using var model = new NGramModel(trainingTokens, tokenizer);
+
+                double tokensPerByte = trainingTokens.Length / (double)trainingBytes.Length;
+                int outputTokens = Math.Max(1, (int)Math.Round(OutputLength * tokensPerByte));
+                int minimumSpanTokens = Math.Max(1, (int)Math.Round(MinimumSpan * tokensPerByte));
+
+                for (int promptIndex = 0; promptIndex < promptStarts.Length; promptIndex++)
                 {
-                    foreach (double penalty in RepetitionPenalties)
+                    int start = promptStarts[promptIndex];
+                    string promptText = corpus.Substring(start, PromptLength);
+                    int[] prompt = tokenizer.Encode(promptText).ToArray();
+                    int runSeed = Seed + promptIndex;
+
+                    foreach (double temperature in Temperatures)
                     {
-                        int[] generated = model.Generate(
-                            prompt,
-                            maxTokens: OutputLength,
-                            temperature: temperature,
-                            topK: 40,
-                            rng: new Random(runSeed),
-                            repetitionPenalty: penalty,
-                            noveltyWindow: 256).ToArray();
+                        foreach (double penalty in RepetitionPenalties)
+                        {
+                            int[] generated = model.Generate(
+                                prompt,
+                                maxTokens: outputTokens,
+                                temperature: temperature,
+                                topK: 40,
+                                rng: new Random(runSeed),
+                                repetitionPenalty: penalty,
+                                noveltyWindow: 256).ToArray();
 
-                        GenerationEvaluation evaluation = GenerationMetrics.Evaluate(
-                            model, prompt, generated, minimumSpan: 32);
-                        string generatedText = model.Tokenizer.Decode(generated);
+                            GenerationEvaluation evaluation = GenerationMetrics.Evaluate(
+                                model, prompt, generated, minimumSpan: minimumSpanTokens);
+                            string generatedText = tokenizer.Decode(generated);
 
-                        rows.Add(string.Join(",",
-                            Csv(Path.GetFileName(corpusPath)),
-                            trainingLength.ToString(CultureInfo.InvariantCulture),
-                            promptIndex.ToString(CultureInfo.InvariantCulture),
-                            (start - validationStart).ToString(CultureInfo.InvariantCulture),
-                            temperature.ToString("0.##", CultureInfo.InvariantCulture),
-                            penalty.ToString("0.##", CultureInfo.InvariantCulture),
-                            runSeed.ToString(CultureInfo.InvariantCulture),
-                            generated.Length.ToString(CultureInfo.InvariantCulture),
-                            evaluation.Overlap.MatchedRatio.ToString("0.0000", CultureInfo.InvariantCulture),
-                            evaluation.Overlap.LongestMatch.ToString(CultureInfo.InvariantCulture),
-                            evaluation.MeanLogProbability.ToString("0.000000", CultureInfo.InvariantCulture),
-                            Csv(generatedText)));
+                            rows.Add(string.Join(",",
+                                Csv(Path.GetFileName(corpusPath)),
+                                tokenizerName,
+                                vocabularySize.ToString(CultureInfo.InvariantCulture),
+                                trainingBytes.Length.ToString(CultureInfo.InvariantCulture),
+                                promptIndex.ToString(CultureInfo.InvariantCulture),
+                                (start - validationStart).ToString(CultureInfo.InvariantCulture),
+                                temperature.ToString("0.##", CultureInfo.InvariantCulture),
+                                penalty.ToString("0.##", CultureInfo.InvariantCulture),
+                                runSeed.ToString(CultureInfo.InvariantCulture),
+                                generated.Length.ToString(CultureInfo.InvariantCulture),
+                                evaluation.Overlap.MatchedRatio.ToString("0.0000", CultureInfo.InvariantCulture),
+                                evaluation.Overlap.LongestMatch.ToString(CultureInfo.InvariantCulture),
+                                evaluation.MeanLogProbability.ToString("0.000000", CultureInfo.InvariantCulture),
+                                Csv(generatedText)));
+                        }
                     }
                 }
-            }
 
-            Console.WriteLine($"Evaluated {Path.GetFileName(corpusPath)} using {trainingLength:N0} training bytes and a held-out tail.");
+                Console.WriteLine($"Evaluated {Path.GetFileName(corpusPath)} with {tokenizerName} ({trainingTokens.Length:N0} training tokens).");
+            }
         }
 
         string fullOutputPath = Path.GetFullPath(outputPath);
@@ -104,7 +129,7 @@ internal static class GenerationExperimentRunner
         File.WriteAllText(fullOutputPath, string.Join(Environment.NewLine, rows) + Environment.NewLine, new UTF8Encoding(false));
         Console.WriteLine($"Wrote {rows.Count - 1} experiment rows to {fullOutputPath}");
         Console.WriteLine("Prompts come from the held-out final 20%; overlap is measured only against the training partition.");
-        Console.WriteLine("Mean log-probability is a model-relative consistency signal, not a human fluency score.");
+        Console.WriteLine("Mean log-probability is a model-relative consistency signal, not a human fluency score; compare it only within a tokenizer.");
     }
 
     private static string GetOutputPath(string[] args)
