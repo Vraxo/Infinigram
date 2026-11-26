@@ -79,3 +79,70 @@ public class NoveltyGenerationTests
             repetitionPenalty: 10).Should().Be("Y");
     }
 }
+
+public class GenerationMetricsTests
+{
+    [Fact]
+    public void MeasuresLongExactCorpusReuse()
+    {
+        const string passage = "A distinct passage that should be recognized exactly.";
+        using var model = new NGramModel("prefix " + passage + " suffix");
+        var generated = model.Tokenizer.Encode(passage + " plus newly written words");
+
+        var overlap = GenerationMetrics.MeasureOverlap(model, generated, minimumSpan: 16);
+
+        overlap.GeneratedTokens.Should().Be(generated.Count);
+        overlap.LongestMatch.Should().Be(model.Tokenizer.Encode(passage + " ").Count);
+        overlap.MatchedTokens.Should().BeGreaterThanOrEqualTo(overlap.LongestMatch);
+        overlap.MatchedRatio.Should().BeGreaterThan(0.5);
+    }
+
+    [Fact]
+    public void IgnoresShortCommonFragments()
+    {
+        using var model = new NGramModel("the cat sat on the mat");
+        var generated = model.Tokenizer.Encode("the");
+
+        var overlap = GenerationMetrics.MeasureOverlap(model, generated, minimumSpan: 8);
+
+        overlap.MatchedTokens.Should().Be(0);
+        overlap.LongestMatch.Should().Be(0);
+        overlap.MatchedRatio.Should().Be(0);
+    }
+
+    [Fact]
+    public void ReturnsZeroWhenNoLongSpanExists()
+    {
+        using var model = new NGramModel("abcdefgh");
+        var generated = model.Tokenizer.Encode("12345678");
+
+        var overlap = GenerationMetrics.MeasureOverlap(model, generated, minimumSpan: 4);
+
+        overlap.MatchedTokens.Should().Be(0);
+        overlap.LongestMatch.Should().Be(0);
+    }
+
+    [Fact]
+    public void HandlesEmptyOutput()
+    {
+        using var model = new NGramModel("training corpus");
+
+        GenerationMetrics.MeasureOverlap(model, Array.Empty<int>())
+            .Should().Be(new GenerationOverlap(0, 0, 0));
+    }
+
+    [Fact]
+    public void RejectsInvalidArguments()
+    {
+        using var model = new NGramModel("training corpus");
+        var tokens = model.Tokenizer.Encode("output");
+
+        Action nullModel = () => GenerationMetrics.MeasureOverlap(null!, tokens);
+        Action nullTokens = () => GenerationMetrics.MeasureOverlap(model, null!);
+        Action invalidSpan = () => GenerationMetrics.MeasureOverlap(model, tokens, 0);
+
+        nullModel.Should().Throw<ArgumentNullException>();
+        nullTokens.Should().Throw<ArgumentNullException>();
+        invalidSpan.Should().Throw<ArgumentOutOfRangeException>();
+    }
+}
