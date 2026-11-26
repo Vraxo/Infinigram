@@ -2,10 +2,11 @@ namespace Infinigram;
 
 internal static class TokenPredictor
 {
-    private const int StrongEvidenceThreshold = 64;
-    private const double BackoffStrength = 4.0;
+    private const int MaximumBackoffLevels = 8;
+    private const double MaximumBackoffMass = 0.05;
 
-    internal static IReadOnlyDictionary<int, double>? Predict(NGramModel model, IReadOnlyList<int> context, int topK = 50, double smoothing = 0.0)
+    internal static IReadOnlyDictionary<int, double>? Predict(
+        NGramModel model, IReadOnlyList<int> context, int topK = 50, double smoothing = 0.0)
     {
         ArgumentNullException.ThrowIfNull(context);
         if (topK < 1)
@@ -33,65 +34,132 @@ internal static class TokenPredictor
     internal static Dictionary<int, double>? GetDistribution(
         NGramModel model, IReadOnlyList<int> context, double smoothing)
     {
-        var counts = model.Continuations(context);
-        if (counts is null && context.Count > 0)
-        {
-            counts = model.Continuations(Array.Empty<int>());
-        }
-        if (counts is null)
+        var unigramCounts = model.Continuations(Array.Empty<int>());
+        if (unigramCounts is null)
         {
             return null;
         }
 
-        var distribution = ToProbabilities(counts, model.VocabSize, smoothing);
+        var distribution = ToProbabilities(unigramCounts, model.VocabSize, smoothing);
         if (context.Count == 0)
         {
             return distribution;
         }
 
-        int evidence = counts.Values.Sum();
-        if (evidence >= StrongEvidenceThreshold)
+        var (_, longestMatchLength) = model.LongestSuffix(context);
+        if (longestMatchLength == 0)
         {
             return distribution;
         }
 
-        var shorterContext = context.Count > 1
-            ? context.Skip(1).ToArray()
-            : Array.Empty<int>();
-        var shorterCounts = model.Continuations(shorterContext);
-        if (shorterCounts is null)
-        {
-            return distribution;
-        }
+        var orders = GetBackoffOrders(longestMatchLength);
+        var evidence = new List<(Dictionary<int, int> Counts, long Total, double ContextWeight)>(orders.Count);
 
-        var backoff = ToProbabilities(shorterCounts, model.VocabSize, smoothing);
-        double contextWeight = evidence / (evidence + BackoffStrength);
-        double backoffWeight = 1.0 - contextWeight;
-
-        foreach (var (token, probability) in backoff)
+        foreach (int order in orders)
         {
-            distribution[token] = distribution.GetValueOrDefault(token) * contextWeight
-                + probability * backoffWeight;
-        }
-
-        if (contextWeight < 1.0)
-        {
-            foreach (var token in distribution.Keys.ToArray())
+            var suffix = GetSuffix(context, order);
+            var counts = model.ContinuationsExact(suffix);
+            if (counts is not { Count: > 0 })
             {
-                if (!backoff.ContainsKey(token))
-                {
-                    distribution[token] *= contextWeight;
-                }
+                continue;
             }
+
+            long total = counts.Values.Sum(count => (long)count);
+            if (total == 0)
+            {
+                continue;
+            }
+
+            // Witten-Bell interpolation estimates how much probability mass
+            // belongs to observed continuations from N observations and T
+            // distinct continuation types.
+            double contextWeight = total / (double)(total + counts.Count);
+            evidence.Add((counts, total, contextWeight));
+
+            // The remaining lower-order mass is now small enough that another
+            // suffix-array search is unlikely to justify its prediction cost.
+            if (1.0 - contextWeight <= MaximumBackoffMass)
+            {
+                break;
+            }
+        }
+
+        // Build from broad to specific so each longer context refines the
+        // distribution produced by its shorter suffix.
+        for (int i = evidence.Count - 1; i >= 0; i--)
+        {
+            var level = evidence[i];
+            distribution = Interpolate(level.Counts, level.Total, level.ContextWeight, distribution);
         }
 
         return distribution;
     }
 
+    private static List<int> GetBackoffOrders(int longestMatchLength)
+    {
+        var orders = new List<int>(MaximumBackoffLevels + 1);
+        int order = longestMatchLength;
+
+        for (int level = 0; level < MaximumBackoffLevels && order > 0; level++)
+        {
+            orders.Add(order);
+            if (order == 1)
+            {
+                break;
+            }
+
+            order = Math.Max(1, order / 2);
+        }
+
+        // Always include the one-token context as the broadest n-gram level.
+        if (orders.Count > 0 && orders[^1] != 1)
+        {
+            orders.Add(1);
+        }
+
+        return orders;
+    }
+
+    private static int[] GetSuffix(IReadOnlyList<int> context, int length)
+    {
+        var suffix = new int[length];
+        int start = context.Count - length;
+        for (int i = 0; i < length; i++)
+        {
+            suffix[i] = context[start + i];
+        }
+
+        return suffix;
+    }
+
+    private static Dictionary<int, double> Interpolate(
+        Dictionary<int, int> counts,
+        long total,
+        double contextWeight,
+        Dictionary<int, double> lowerOrder)
+    {
+        double lowerOrderWeight = 1.0 - contextWeight;
+        var probabilities = new Dictionary<int, double>(lowerOrder.Count + counts.Count);
+
+        foreach (var (token, probability) in lowerOrder)
+        {
+            probabilities[token] = probability * lowerOrderWeight;
+        }
+
+        foreach (var (token, count) in counts)
+        {
+            double maximumLikelihood = count / (double)total;
+            probabilities[token] = probabilities.GetValueOrDefault(token)
+                + contextWeight * maximumLikelihood;
+        }
+
+        return probabilities;
+    }
+
     private static Dictionary<int, double> ToProbabilities(
         Dictionary<int, int> counts, int vocabSize, double smoothing)
     {
-        double total = counts.Values.Sum();
+        double total = counts.Values.Sum(count => (double)count);
         double smoothedTotal = total + smoothing * vocabSize;
         var probabilities = new Dictionary<int, double>(counts.Count);
 
