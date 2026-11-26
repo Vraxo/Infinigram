@@ -192,6 +192,31 @@ public class CorpusWordIndexTests
     }
 
     [Fact]
+    public void PhraseGenerationInterpolatesBroaderCorpusContexts()
+    {
+        using var model = new NGramModel(
+            "alpha beta gamma delta one red fox. " +
+            "omega beta gamma delta two blue bird. " +
+            "zeta beta gamma delta three quick dog.");
+        var words = model.CreateWordIndex();
+
+        var phrases = Enumerable.Range(1, 128)
+            .Select(seed => words.GenerateStructuredText(
+                "alpha beta gamma",
+                maxWords: 10,
+                temperature: 1.0,
+                topK: null,
+                rng: new Random(seed)))
+            .Select(text => string.Join(" ", CorpusWordIndex.Tokenize(text).Skip(3).Take(3)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        phrases.Should().Contain("delta one red");
+        phrases.Should().Contain("delta two blue");
+        phrases.Should().Contain("delta three quick");
+    }
+
+    [Fact]
     public void StructuredGenerationPreservesPromptAndRejectsUnknownTrailingContext()
     {
         using var model = new NGramModel("the cat sleeps. a dog runs, jumps, and plays!");
