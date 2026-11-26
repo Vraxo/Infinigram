@@ -170,11 +170,42 @@ internal static class GenerationExperimentRunner
                         evaluation.Overlap.LongestMatch.ToString(CultureInfo.InvariantCulture),
                         evaluation.MeanLogProbability.ToString("0.000000", CultureInfo.InvariantCulture),
                         Csv(generatedText)));
+
+                    string structuredFullText = wordIndex.GenerateStructuredText(
+                        promptText,
+                        maxWords: 24,
+                        temperature: temperature,
+                        topK: 40,
+                        rng: new Random(runSeed));
+                    string structuredText = structuredFullText.StartsWith(promptText, StringComparison.Ordinal)
+                        ? structuredFullText[promptText.Length..]
+                        : string.Empty;
+                    int[] structuredBytes = byteTokenizer.Encode(structuredText).ToArray();
+                    GenerationEvaluation structuredEvaluation = GenerationMetrics.Evaluate(
+                        byteModel, prompt, structuredBytes, minimumSpan: MinimumSpan);
+
+                    rows.Add(string.Join(",",
+                        Csv(Path.GetFileName(corpusPath)),
+                        "word-structured",
+                        wordIndex.VocabularySize.ToString(CultureInfo.InvariantCulture),
+                        trainingBytes.Length.ToString(CultureInfo.InvariantCulture),
+                        promptIndex.ToString(CultureInfo.InvariantCulture),
+                        (promptStart - validationStart).ToString(CultureInfo.InvariantCulture),
+                        temperature.ToString("0.##", CultureInfo.InvariantCulture),
+                        penalty.ToString("0.##", CultureInfo.InvariantCulture),
+                        runSeed.ToString(CultureInfo.InvariantCulture),
+                        CorpusWordIndex.Tokenize(structuredText).Count.ToString(CultureInfo.InvariantCulture),
+                        "byte",
+                        structuredEvaluation.Overlap.MatchedRatio.ToString("0.0000", CultureInfo.InvariantCulture),
+                        structuredEvaluation.Overlap.LongestMatch.ToString(CultureInfo.InvariantCulture),
+                        structuredEvaluation.MeanLogProbability.ToString("0.000000", CultureInfo.InvariantCulture),
+                        Csv(structuredText)));
                 }
             }
 
             Console.WriteLine(
-                $"Evaluated {Path.GetFileName(corpusPath)} with word-index ({wordIndex.WordCount:N0} word tokens).");
+                $"Evaluated {Path.GetFileName(corpusPath)} with word-index and sentence-structure generation " +
+                $"({wordIndex.WordCount:N0} word tokens, {wordIndex.SentenceShapeCount:N0} observed shapes).");
         }
 
         string fullOutputPath = Path.GetFullPath(outputPath);

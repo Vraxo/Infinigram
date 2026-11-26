@@ -5,7 +5,7 @@ namespace Infinigram;
 
 /// <summary>
 /// A word-and-punctuation view of the same source corpus.
-/// Its vocabulary, token sequence, and continuation counts are derived only from corpus text.
+/// Its vocabulary, token sequence, continuation counts, and sentence shapes are corpus-derived.
 /// </summary>
 public sealed class CorpusWordIndex
 {
@@ -14,22 +14,26 @@ public sealed class CorpusWordIndex
 
     private const int MaximumContextWords = 12;
     private const int MaximumBackoffLevels = 8;
+    private const int MaximumIndexedSentenceWords = 128;
 
     private static readonly Regex TokenPattern = new(
         @"[\p{L}\p{M}\p{N}_]+(?:['’\-‐‑‒–][\p{L}\p{M}\p{N}_]+)*|[\uD800-\uDBFF][\uDC00-\uDFFF]|[^\s]",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static readonly HashSet<char> ClosingPunctuation =
-        new(",.;:!?%)]}»”’\"".ToCharArray());
+        new(",.;:!?%)]}»”’\"—–".ToCharArray());
 
     private static readonly HashSet<char> OpeningPunctuation =
         new("([{«“".ToCharArray());
 
     private readonly Dictionary<string, int> _tokenIds;
     private readonly string[] _vocabulary;
+    private readonly bool[] _isWordToken;
     private readonly SuffixArray _suffixArray;
     private readonly ContinuationCounter _continuations = new();
     private readonly Dictionary<int, int> _unigramCounts = new();
+    private readonly Dictionary<int, int> _wordUnigramCounts = new();
+    private readonly SentenceShape[] _sentenceShapes;
 
     internal CorpusWordIndex(IReadOnlyList<int> corpus, ITokenizer tokenizer)
     {
@@ -53,6 +57,10 @@ public sealed class CorpusWordIndex
             tokenSequence.Add(id);
             surfaceCounts[surface] = surfaceCounts.GetValueOrDefault(surface) + 1;
             _unigramCounts[id] = _unigramCounts.GetValueOrDefault(id) + 1;
+            if (IsWordToken(surface))
+            {
+                _wordUnigramCounts[id] = _wordUnigramCounts.GetValueOrDefault(id) + 1;
+            }
         }
 
         _vocabulary = new string[_tokenIds.Count];
@@ -70,15 +78,25 @@ public sealed class CorpusWordIndex
             }
         }
 
+        _isWordToken = _vocabulary.Select(IsWordToken).ToArray();
         _suffixArray = new SuffixArray(tokenSequence.ToArray());
+        (_sentenceCount, _sentenceShapes) = BuildSentenceShapes(text);
         Vocabulary = Array.AsReadOnly(_vocabulary);
     }
+
+    private readonly int _sentenceCount;
 
     /// <summary>The number of word and punctuation tokens in the corpus.</summary>
     public int WordCount => _suffixArray.Length;
 
     /// <summary>The number of distinct case-insensitive tokens found in the corpus.</summary>
     public int VocabularySize => _vocabulary.Length;
+
+    /// <summary>The number of complete sentences with a recognized ending in the corpus.</summary>
+    public int SentenceCount => _sentenceCount;
+
+    /// <summary>The number of distinct bounded clause-length and punctuation layouts found in the corpus.</summary>
+    public int SentenceShapeCount => _sentenceShapes.Length;
 
     /// <summary>Corpus-derived display forms, ordered by their assigned token IDs.</summary>
     public IReadOnlyList<string> Vocabulary { get; }
@@ -137,35 +155,15 @@ public sealed class CorpusWordIndex
         }
 
         var contextWords = Tokenize(context);
-        var current = EncodeTrailingKnownSuffix(contextWords);
-        bool hasUnknownTrailingContext = contextWords.Count > 0 && current.Count == 0;
-        var output = new StringBuilder(context);
-        int contextStart = Math.Max(0, current.Count - MaximumContextWords);
-        if (contextStart > 0)
+        var current = PrepareContext(contextWords);
+        if (contextWords.Count > 0 && current.Count == 0)
         {
-            current.RemoveRange(0, contextStart);
+            return context;
         }
 
+        var output = new StringBuilder(context);
         for (int step = 0; step < maxTokens; step++)
         {
-            IReadOnlyDictionary<int, int>? counts;
-            if (current.Count == 0)
-            {
-                if (step > 0 || hasUnknownTrailingContext)
-                {
-                    break;
-                }
-                counts = _unigramCounts;
-            }
-            else
-            {
-                counts = _continuations.Get(_suffixArray, current, DefaultContinuationLimit);
-                if (counts is null || counts.Count == 0)
-                {
-                    break;
-                }
-            }
-
             var probabilities = BuildDistribution(current, topK);
             if (probabilities.Count == 0)
             {
@@ -174,14 +172,97 @@ public sealed class CorpusWordIndex
 
             int next = Sampling.SampleFromDistribution(probabilities, temperature, rng);
             AppendToken(output, _vocabulary[next]);
-            current.Add(next);
-            if (current.Count > MaximumContextWords)
-            {
-                current.RemoveAt(0);
-            }
+            AddContextToken(current, next);
         }
 
         return output.ToString();
+    }
+
+    /// <summary>
+    /// Generates one sentence using a clause-length and punctuation layout sampled from the corpus.
+    /// Words are generated individually from corpus continuation counts; only the sentence shape
+    /// is reused, so the resulting sentence need not occur verbatim in the corpus.
+    /// </summary>
+    public string GenerateStructuredText(
+        string context = "",
+        int maxWords = 40,
+        double temperature = 0.8,
+        int? topK = 30,
+        Random? rng = null)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (maxWords < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxWords));
+        }
+        if (!double.IsFinite(temperature) || temperature < 0.0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(temperature));
+        }
+
+        var contextWords = Tokenize(context);
+        var current = PrepareContext(contextWords);
+        if (contextWords.Count > 0 && current.Count == 0)
+        {
+            return context;
+        }
+
+        Random random = rng ?? Random.Shared;
+        SentenceShape? shape = SampleSentenceShape(random, maxWords);
+        if (shape is null || _wordUnigramCounts.Count == 0)
+        {
+            return context;
+        }
+
+        var output = new StringBuilder(context);
+        for (int clause = 0; clause < shape.ClauseLengths.Length; clause++)
+        {
+            for (int word = 0; word < shape.ClauseLengths[clause]; word++)
+            {
+                var probabilities = BuildWordDistribution(current, topK);
+                if (probabilities.Count == 0)
+                {
+                    return output.ToString();
+                }
+
+                int next = Sampling.SampleFromDistribution(probabilities, temperature, random);
+                AppendToken(output, _vocabulary[next]);
+                AddContextToken(current, next);
+            }
+
+            string boundary = clause < shape.Separators.Length
+                ? shape.Separators[clause]
+                : shape.Ending;
+            if (!_tokenIds.TryGetValue(boundary, out int boundaryId))
+            {
+                return output.ToString();
+            }
+
+            AppendToken(output, _vocabulary[boundaryId]);
+            AddContextToken(current, boundaryId);
+        }
+
+        return output.ToString();
+    }
+
+    private List<int> PrepareContext(IReadOnlyList<string> words)
+    {
+        var current = EncodeTrailingKnownSuffix(words);
+        int start = Math.Max(0, current.Count - MaximumContextWords);
+        if (start > 0)
+        {
+            current.RemoveRange(0, start);
+        }
+        return current;
+    }
+
+    private void AddContextToken(List<int> context, int token)
+    {
+        context.Add(token);
+        if (context.Count > MaximumContextWords)
+        {
+            context.RemoveAt(0);
+        }
     }
 
     private List<int> EncodeTrailingKnownSuffix(IReadOnlyList<string> words)
@@ -230,14 +311,46 @@ public sealed class CorpusWordIndex
             distribution = Interpolate(counts, total, contextWeight, distribution);
         }
 
+        return LimitAndNormalize(distribution, topK);
+    }
+
+    private Dictionary<int, double> BuildWordDistribution(List<int> context, int? topK)
+    {
+        var distribution = BuildDistribution(context, topK: null);
+        foreach (int token in distribution.Keys.Where(token => !_isWordToken[token]).ToArray())
+        {
+            distribution.Remove(token);
+        }
+
+        if (distribution.Count == 0)
+        {
+            distribution = ToProbabilities(_wordUnigramCounts);
+        }
+
+        return LimitAndNormalize(distribution, topK);
+    }
+
+    private static Dictionary<int, double> LimitAndNormalize(
+        Dictionary<int, double> distribution, int? topK)
+    {
         if (topK is int limit && distribution.Count > limit)
         {
-            return distribution
+            distribution = distribution
                 .OrderByDescending(pair => pair.Value)
                 .Take(Math.Clamp(limit, 1, distribution.Count))
                 .ToDictionary(pair => pair.Key, pair => pair.Value);
         }
 
+        double total = distribution.Values.Sum();
+        if (total <= 0.0)
+        {
+            return new Dictionary<int, double>();
+        }
+
+        foreach (int token in distribution.Keys.ToArray())
+        {
+            distribution[token] /= total;
+        }
         return distribution;
     }
 
@@ -305,6 +418,103 @@ public sealed class CorpusWordIndex
         return probabilities;
     }
 
+    private static bool IsWordToken(string token) =>
+        token.Any(character => char.IsLetterOrDigit(character) || character == '_');
+
+    private static bool IsSentenceEnding(string token) => token is "." or "?" or "!";
+    private static bool IsClauseSeparator(string token) => token is "," or ";" or ":" or "—" or "–";
+
+    private static (int SentenceCount, SentenceShape[] Shapes) BuildSentenceShapes(string text)
+    {
+        var counts = new Dictionary<string, SentenceShape>(StringComparer.Ordinal);
+        var clauseLengths = new List<int>();
+        var separators = new List<string>();
+        int clauseWords = 0;
+        int sentenceWords = 0;
+        int sentenceCount = 0;
+
+        foreach (string token in Tokenize(text))
+        {
+            if (IsSentenceEnding(token))
+            {
+                if (clauseWords > 0)
+                {
+                    clauseLengths.Add(clauseWords);
+                }
+
+                if (sentenceWords > 0)
+                {
+                    sentenceCount++;
+                    if (sentenceWords <= MaximumIndexedSentenceWords && clauseLengths.Count > 0)
+                    {
+                        string key = $"{string.Join(",", clauseLengths)}|{string.Join("|", separators)}|{token}";
+                        if (counts.TryGetValue(key, out var existing))
+                        {
+                            counts[key] = existing with { Count = existing.Count + 1 };
+                        }
+                        else
+                        {
+                            counts.Add(key, new SentenceShape(
+                                clauseLengths.ToArray(), separators.ToArray(), token, 1));
+                        }
+                    }
+                }
+
+                clauseLengths.Clear();
+                separators.Clear();
+                clauseWords = 0;
+                sentenceWords = 0;
+            }
+            else if (IsClauseSeparator(token) && clauseWords > 0)
+            {
+                clauseLengths.Add(clauseWords);
+                separators.Add(token);
+                clauseWords = 0;
+            }
+            else if (IsWordToken(token))
+            {
+                clauseWords++;
+                sentenceWords++;
+            }
+        }
+
+        return (sentenceCount, counts.Values.ToArray());
+    }
+
+    private SentenceShape? SampleSentenceShape(Random random, int maxWords)
+    {
+        int total = 0;
+        foreach (var shape in _sentenceShapes)
+        {
+            if (shape.WordCount <= maxWords)
+            {
+                total += shape.Count;
+            }
+        }
+
+        if (total == 0)
+        {
+            return null;
+        }
+
+        int selected = random.Next(total);
+        foreach (var shape in _sentenceShapes)
+        {
+            if (shape.WordCount > maxWords)
+            {
+                continue;
+            }
+
+            if (selected < shape.Count)
+            {
+                return shape;
+            }
+            selected -= shape.Count;
+        }
+
+        return null;
+    }
+
     private static void AppendToken(StringBuilder output, string token)
     {
         if (output.Length == 0)
@@ -329,5 +539,11 @@ public sealed class CorpusWordIndex
             output.Append(' ');
         }
         output.Append(token);
+    }
+
+    private sealed record SentenceShape(
+        int[] ClauseLengths, string[] Separators, string Ending, int Count)
+    {
+        internal int WordCount => ClauseLengths.Sum();
     }
 }
