@@ -92,7 +92,7 @@ public class GenerationMetricsTests
         var overlap = GenerationMetrics.MeasureOverlap(model, generated, minimumSpan: 16);
 
         overlap.GeneratedTokens.Should().Be(generated.Count);
-        overlap.LongestMatch.Should().Be(generated.Count - model.Tokenizer.Encode(" plus newly written words").Count);
+        overlap.LongestMatch.Should().Be(model.Tokenizer.Encode(passage).Count);
         overlap.MatchedTokens.Should().BeGreaterThanOrEqualTo(overlap.LongestMatch);
         overlap.MatchedRatio.Should().BeGreaterThan(0.5);
     }
