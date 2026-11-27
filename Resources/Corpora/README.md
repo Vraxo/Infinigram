@@ -69,3 +69,14 @@ Project Gutenberg identifies eBook #42671 as public domain in the United States.
 - **Preparation:** complete fourteen-chapter body and appendix retained, including footnotes, tables, and formulas; title/front matter, table of contents, index, transcriber's notes, illustration placeholders, embedded page markers, and Project Gutenberg distribution/license text removed. Original chapter headings and prose are retained.
 
 Project Gutenberg identifies eBook #42602 as public domain in the United States. The text covers the history, mechanics, and applications of steam engines, including railway and marine engines.
+
+## The Federalist Papers
+
+- **Authors:** Alexander Hamilton, John Jay, and James Madison
+- **Original publication:** 1787–1788; essays published under the pseudonym "Publius"
+- **Source edition:** Project Gutenberg eBook #1404
+- **Project Gutenberg record:** https://www.gutenberg.org/ebooks/1404
+- **Source repository copy:** https://github.com/GITenberg/The-Federalist-Papers_1404/blob/master/1404.txt
+- **Preparation:** all eighty-five essays retained in numerical order, including their original headings, publication lines, author attributions, and footnotes; title page and Project Gutenberg distribution/license text removed.
+
+Project Gutenberg identifies eBook #1404 as public domain in the United States. The essays address constitutional design, federalism, representation, and the structure of the United States government.
