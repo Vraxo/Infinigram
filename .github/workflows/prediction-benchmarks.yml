@@ -6,6 +6,7 @@ on:
     paths:
       - "benchmarks/Infinigram.Benchmarks/Model/**"
       - "benchmarks/Infinigram.Benchmarks/Core/**"
+      - "benchmarks/Infinigram.Benchmarks/Runner/**"
       - "src/Infinigram/Model/**"
       - ".github/workflows/prediction-benchmarks.yml"
   workflow_dispatch:
@@ -35,11 +36,21 @@ jobs:
           --filter "*PredictionHotPathBenchmarks*"
           --artifacts ./BenchmarkDotNet.Artifacts
 
+      - name: Evaluate held-out next-token prediction
+        run: >-
+          dotnet run --configuration Release
+          --project benchmarks/Infinigram.Benchmarks/Infinigram.Benchmarks.csproj
+          --
+          --evaluate-prediction
+          --output prediction-evaluation.csv
+
       - name: Upload benchmark results
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: prediction-benchmark-results
-          path: BenchmarkDotNet.Artifacts
+          path: |
+            BenchmarkDotNet.Artifacts
+            prediction-evaluation.csv
           if-no-files-found: warn
           retention-days: 30

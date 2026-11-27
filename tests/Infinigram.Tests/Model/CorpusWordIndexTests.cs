@@ -53,6 +53,57 @@ public class CorpusWordIndexTests
     }
 
     [Fact]
+    public void PredictNextReturnsNormalizedCorpusProbabilities()
+    {
+        using var model = new NGramModel("The cat sat. The cat ran. The dog slept.");
+        var words = model.CreateWordIndex();
+
+        var predictions = words.PredictNext("the cat", contextWindow: 2);
+
+        predictions.Should().ContainKeys("sat", "ran");
+        predictions.Values.Sum().Should().BeApproximately(1.0, 1e-10);
+        predictions.Should().OnlyContain(pair => pair.Value > 0.0);
+    }
+
+    [Fact]
+    public void PredictNextSupportsAnUnconditionalUnigramBaseline()
+    {
+        using var model = new NGramModel("the cat sat. the dog ran.");
+        var words = model.CreateWordIndex();
+
+        var contextual = words.PredictNext("the cat", contextWindow: 0);
+        var unconditional = words.PredictNext();
+
+        contextual.Should().BeEquivalentTo(unconditional);
+    }
+
+    [Fact]
+    public void PredictNextCanLimitAndRenormalizeCandidates()
+    {
+        using var model = new NGramModel("the cat sat. the cat ran. the dog slept.");
+        var words = model.CreateWordIndex();
+
+        var predictions = words.PredictNext("the cat", contextWindow: 2, topK: 1);
+
+        predictions.Should().ContainSingle();
+        predictions.Values.Sum().Should().BeApproximately(1.0, 1e-10);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(13)]
+    public void PredictNextRejectsInvalidContextWindows(int contextWindow)
+    {
+        using var model = new NGramModel("the cat sleeps.");
+        var words = model.CreateWordIndex();
+
+        Action predict = () => words.PredictNext(contextWindow: contextWindow);
+
+        predict.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("contextWindow");
+    }
+
+    [Fact]
     public void GenerationUsesOnlyCorpusVocabulary()
     {
         using var model = new NGramModel("The cat sat. The cat ran.");
