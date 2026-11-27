@@ -125,6 +125,43 @@ public class CorpusWordIndexTests
     }
 
     [Fact]
+    public void SentenceGenerationPredictsWordsAndSentenceEndingFromCorpus()
+    {
+        using var model = new NGramModel("The cat sleeps. The cat runs!");
+        var words = model.CreateWordIndex();
+
+        var generated = Enumerable.Range(1, 64)
+            .Select(seed => words.GenerateSentence(
+                "The cat",
+                maxWords: 10,
+                temperature: 1.0,
+                topK: null,
+                rng: new Random(seed)))
+            .ToArray();
+
+        generated.Should().Contain(text => text.EndsWith(".", StringComparison.Ordinal));
+        generated.Should().Contain(text => text.EndsWith("!", StringComparison.Ordinal));
+
+        foreach (string text in generated)
+        {
+            text.Should().StartWith("The cat ");
+            text.Should().MatchRegex(@"[.!]$");
+            CorpusWordIndex.Tokenize(text)
+                .Should().OnlyContain(token =>
+                    words.Vocabulary.Contains(token, StringComparer.OrdinalIgnoreCase));
+        }
+    }
+
+    [Fact]
+    public void SentenceGenerationPreservesUnknownContext()
+    {
+        using var model = new NGramModel("the cat sleeps.");
+        var words = model.CreateWordIndex();
+
+        words.GenerateSentence("unknown context").Should().Be("unknown context");
+    }
+
+    [Fact]
     public void StructuredGenerationUsesOnlyObservedSentenceLayouts()
     {
         using var model = new NGramModel("The cat sleeps. A dog runs, jumps, and plays!");
