@@ -217,6 +217,16 @@ public sealed class CorpusWordIndex
         for (int step = 0; step < maximumSteps && generatedWords < maxWords; step++)
         {
             var probabilities = BuildDistribution(current, topK);
+            if (generatedWords == 0)
+            {
+                foreach (int token in probabilities.Keys
+                    .Where(token => IsSentenceEnding(_vocabulary[token]))
+                    .ToArray())
+                {
+                    probabilities.Remove(token);
+                }
+            }
+
             if (probabilities.Count == 0)
             {
                 break;
