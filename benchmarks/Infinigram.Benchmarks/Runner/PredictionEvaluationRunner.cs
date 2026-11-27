@@ -55,6 +55,7 @@ internal static class PredictionEvaluationRunner
         EvaluateCrossCorpus(corpora, rows);
         EvaluateCombinedCorpus(corpora, rows);
         EvaluateSizeMatchedCrossCorpus(corpora, rows);
+        EvaluateBalancedCrossCorpus(corpora, rows);
 
         string fullOutputPath = Path.GetFullPath(outputPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullOutputPath)!);
@@ -207,10 +208,11 @@ internal static class PredictionEvaluationRunner
         }
 
         int segmentCount = Math.Min(SizeMatchedSegmentCount, tokenBudget);
-        int baseSegmentLength = tokenBudget / segmentCount;
-        int extraTokens = tokenBudget % segmentCount;
+        int sampledTokenBudget = tokenBudget - segmentCount + 1;
+        int baseSegmentLength = sampledTokenBudget / segmentCount;
+        int extraTokens = sampledTokenBudget % segmentCount;
         var segments = new List<string>(segmentCount);
-        int sourceRange = tokens.Count - tokenBudget;
+        int sourceRange = tokens.Count - sampledTokenBudget;
 
         int sampledBefore = 0;
         for (int segment = 0; segment < segmentCount; segment++)
@@ -226,6 +228,55 @@ internal static class PredictionEvaluationRunner
         }
 
         return string.Join("\0", segments);
+    }
+
+    private static void EvaluateBalancedCrossCorpus(
+        IReadOnlyList<CorpusData> corpora,
+        List<string> rows)
+    {
+        if (corpora.Count < 2)
+        {
+            return;
+        }
+
+        int trainingBudget = corpora.Min(corpus => corpus.Tokens.Length);
+        if (trainingBudget == 0)
+        {
+            return;
+        }
+
+        foreach (CorpusData trainingCorpus in corpora)
+        {
+            string trainingText = BuildSizeMatchedTrainingText(
+                trainingCorpus.Tokens,
+                trainingBudget);
+            int trainingTokenCount = CorpusWordIndex.Tokenize(trainingText).Count;
+
+            using var model = new NGramModel(trainingText);
+            var wordIndex = model.CreateWordIndex();
+            var vocabulary = wordIndex.Vocabulary.ToHashSet(
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (CorpusData evaluationCorpus in corpora)
+            {
+                if (ReferenceEquals(trainingCorpus, evaluationCorpus) ||
+                    evaluationCorpus.Tokens.Length == 0)
+                {
+                    continue;
+                }
+
+                Evaluate(
+                    rows,
+                    wordIndex,
+                    vocabulary,
+                    "cross-corpus-balanced",
+                    trainingCorpus.Name,
+                    evaluationCorpus.Name,
+                    trainingTokenCount,
+                    [],
+                    evaluationCorpus.Tokens);
+            }
+        }
     }
 
     private static void EvaluateCombinedCorpus(
