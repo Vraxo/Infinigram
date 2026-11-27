@@ -8,6 +8,7 @@ on:
       - "benchmarks/Infinigram.Benchmarks/Core/**"
       - "benchmarks/Infinigram.Benchmarks/Runner/**"
       - "src/Infinigram/Model/**"
+      - "Resources/Corpora/**/*.txt"
       - ".github/workflows/prediction-benchmarks.yml"
   workflow_dispatch:
 
