@@ -219,11 +219,11 @@ public sealed class CorpusWordIndex
             var probabilities = BuildDistribution(current, topK);
             if (generatedWords == 0)
             {
-                foreach (int token in probabilities.Keys
-                    .Where(token => IsSentenceEnding(_vocabulary[token]))
+                foreach (int endingTokenId in probabilities.Keys
+                    .Where(tokenId => IsSentenceEnding(_vocabulary[tokenId]))
                     .ToArray())
                 {
-                    probabilities.Remove(token);
+                    probabilities.Remove(endingTokenId);
                 }
             }
 
