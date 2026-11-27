@@ -451,16 +451,48 @@ internal static class TransferInferenceRunner
             .Where(corpus => corpus.Group == targetGroup)
             .ToArray();
 
-        bool excludeSelf = sourceGroup == targetGroup;
-        int sourceDrawCount = sourceBooks.Length - (excludeSelf ? 1 : 0);
-        double targetTotal = 0.0;
-
-        for (int targetDraw = 0; targetDraw < targetBooks.Length; targetDraw++)
+        var selectedTargets = new CorpusData[targetBooks.Length];
+        for (int index = 0; index < selectedTargets.Length; index++)
         {
-            CorpusData target = targetBooks[random.NextInt(targetBooks.Length)];
-            CorpusData[] eligibleSources = excludeSelf
-                ? sourceBooks.Where(source => source.Index != target.Index).ToArray()
-                : sourceBooks;
+            selectedTargets[index] = targetBooks[random.NextInt(targetBooks.Length)];
+        }
+
+        // Draw source-book weights once per replicate so the same source-book
+        // resample is shared across every target book in this comparison.
+        var sourceWeights = new int[sourceBooks.Length];
+        bool hasEligibleSource;
+        do
+        {
+            Array.Clear(sourceWeights);
+            for (int draw = 0; draw < sourceBooks.Length; draw++)
+            {
+                sourceWeights[random.NextInt(sourceBooks.Length)]++;
+            }
+
+            hasEligibleSource = true;
+            foreach (CorpusData target in selectedTargets)
+            {
+                int eligibleWeight = 0;
+                for (int sourceIndex = 0; sourceIndex < sourceBooks.Length; sourceIndex++)
+                {
+                    if (sourceBooks[sourceIndex].Index != target.Index)
+                    {
+                        eligibleWeight += sourceWeights[sourceIndex];
+                    }
+                }
+
+                if (eligibleWeight == 0)
+                {
+                    hasEligibleSource = false;
+                    break;
+                }
+            }
+        }
+        while (!hasEligibleSource);
+
+        double targetTotal = 0.0;
+        foreach (CorpusData target in selectedTargets)
+        {
             var selectedBlocks = new int[blockCount];
             for (int block = 0; block < blockCount; block++)
             {
@@ -468,18 +500,25 @@ internal static class TransferInferenceRunner
             }
 
             double sourceTotal = 0.0;
-            for (int sourceDraw = 0; sourceDraw < sourceDrawCount; sourceDraw++)
+            int eligibleWeightTotal = 0;
+            for (int sourceIndex = 0; sourceIndex < sourceBooks.Length; sourceIndex++)
             {
-                CorpusData source = eligibleSources[
-                    random.NextInt(eligibleSources.Length)];
-                sourceTotal += GetBlockAccuracy(
+                CorpusData source = sourceBooks[sourceIndex];
+                int weight = sourceWeights[sourceIndex];
+                if (weight == 0 || source.Index == target.Index)
+                {
+                    continue;
+                }
+
+                sourceTotal += weight * GetBlockAccuracy(
                     results[source.Index, target.Index], selectedBlocks);
+                eligibleWeightTotal += weight;
             }
 
-            targetTotal += sourceTotal / sourceDrawCount;
+            targetTotal += sourceTotal / eligibleWeightTotal;
         }
 
-        return targetTotal / targetBooks.Length;
+        return targetTotal / selectedTargets.Length;
     }
 
     private static double GetBlockAccuracy(
@@ -571,7 +610,7 @@ internal static class TransferInferenceRunner
         report.AppendLine("## Bootstrap interpretation");
         report.AppendLine();
         report.AppendLine(
-            "Intervals are 95% percentile hierarchical bootstrap intervals. Each replicate resamples target books with replacement within target genre, resamples source books with replacement within source genre (excluding self-transfer for same-genre comparisons), and resamples contiguous target-text blocks with replacement. Block resampling is paired across source models for a selected target.");
+            "Intervals are 95% percentile hierarchical bootstrap intervals. Each replicate resamples target books with replacement within target genre and draws source-book bootstrap weights once within source genre, reusing those weights across all selected targets. Self-transfer is excluded when source and target genres match. Contiguous target-text blocks are resampled separately for each selected target, with the same block draw paired across its source models.");
         report.AppendLine();
         report.AppendLine(
             "The primary contrast is nonfiction→nonfiction minus fiction→fiction. A positive interval entirely above zero is consistent with a positive difference for this selected corpus set under this resampling design. It does not establish a general genre law: there are only three fiction and five nonfiction books, authors and historical periods are not independently balanced, and repeated blocks within a book are not independent books.");
