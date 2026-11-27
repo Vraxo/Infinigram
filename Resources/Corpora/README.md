@@ -80,3 +80,14 @@ Project Gutenberg identifies eBook #42602 as public domain in the United States.
 - **Preparation:** all eighty-five essays retained in numerical order, including their original headings, publication lines, author attributions, and footnotes; title page and Project Gutenberg distribution/license text removed.
 
 Project Gutenberg identifies eBook #1404 as public domain in the United States. The essays address constitutional design, federalism, representation, and the structure of the United States government.
+
+## Personal Memoirs of U. S. Grant
+
+- **Author:** Ulysses S. Grant
+- **Original publication:** 1885, complete two-volume memoir
+- **Source edition:** Project Gutenberg eBook #4367
+- **Project Gutenberg record:** https://www.gutenberg.org/ebooks/4367
+- **Source repository copy:** https://github.com/GITenberg/Personal-Memoirs-of-U.-S.-Grant-Complete_4367/blob/master/4367.txt
+- **Preparation:** preface and all seventy memoir chapters retained; duplicate contents pages, title/front matter, volume transition marker, appended official military report, and Project Gutenberg distribution/license text removed. The separate appendix is excluded to keep this control focused on Grant's first-person narrative rather than the appended operational report.
+
+The GITenberg source repository identifies this work as public domain. The memoir was completed and published in 1885.
