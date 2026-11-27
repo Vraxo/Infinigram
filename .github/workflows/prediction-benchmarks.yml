@@ -2,7 +2,7 @@ name: Prediction benchmarks
 
 on:
   push:
-    branches: [main, "intelligence/**", "research/**"]
+    branches: [main, "intelligence/**", "research/**", "refactor/**"]
     paths:
       - "benchmarks/Infinigram.Benchmarks/Model/**"
       - "benchmarks/Infinigram.Benchmarks/Core/**"
