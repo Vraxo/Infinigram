@@ -58,3 +58,14 @@ Project Gutenberg identifies eBook #42671 as public domain in the United States.
 - **Project Gutenberg record:** https://www.gutenberg.org/ebooks/1228
 - **Source repository copy:** https://github.com/GITenberg/On-the-Origin-of-Species-By-Means-of-Natural-Selection--13-Or-the-Preservation-of-Favoured-Rac__1228/blob/master/1228.txt
 - **Preparation:** introduction and complete fourteen-chapter body retained; title/front matter, table of contents, index, and Project Gutenberg distribution/license text removed. Original chapter and section headings are retained.
+
+## The Steam Engine Explained and Illustrated
+
+- **Author:** Dionysius Lardner (1793–1859)
+- **Original publication:** 1840, seventh edition
+- **Source edition:** Project Gutenberg eBook #42602
+- **Project Gutenberg record:** https://www.gutenberg.org/ebooks/42602
+- **Source repository copy:** https://github.com/GITenberg/The-Steam-Engine-Explained-and-Illustrated--Seventh-Edition-With-an-Account-of-its-Invention-__42602/blob/master/42602-0.txt
+- **Preparation:** complete fourteen-chapter body and appendix retained, including footnotes, tables, and formulas; title/front matter, table of contents, index, transcriber's notes, illustration placeholders, embedded page markers, and Project Gutenberg distribution/license text removed. Original chapter headings and prose are retained.
+
+Project Gutenberg identifies eBook #42602 as public domain in the United States. The text covers the history, mechanics, and applications of steam engines, including railway and marine engines.
