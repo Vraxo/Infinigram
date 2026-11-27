@@ -167,6 +167,28 @@ public class CorpusWordIndexTests
     }
 
     [Fact]
+    public void SentenceShapeDoesNotUseTheFollowingSentenceAfterTerminalPromptPunctuation()
+    {
+        using var model = new NGramModel(
+            "alpha beta. tiny. red fox jumps. green bird flies!");
+        var words = model.CreateWordIndex();
+
+        var generated = Enumerable.Range(1, 128)
+            .Select(seed => words.GenerateStructuredText(
+                "alpha beta.",
+                maxWords: 5,
+                temperature: 1.0,
+                topK: null,
+                rng: new Random(seed)))
+            .Select(text => CorpusWordIndex.Tokenize(text)
+                .Count(token => token.Any(char.IsLetterOrDigit)))
+            .Distinct()
+            .ToArray();
+
+        generated.Should().Contain(3);
+    }
+
+    [Fact]
     public void SentenceShapesInterpolateAcrossPromptContextLengths()
     {
         using var model = new NGramModel(
