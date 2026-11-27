@@ -91,3 +91,14 @@ Project Gutenberg identifies eBook #1404 as public domain in the United States. 
 - **Preparation:** preface and all seventy memoir chapters retained; duplicate contents pages, title/front matter, volume transition marker, appended official military report, and Project Gutenberg distribution/license text removed. The separate appendix is excluded to keep this control focused on Grant's first-person narrative rather than the appended operational report.
 
 The GITenberg source repository identifies this work as public domain. The memoir was completed and published in 1885.
+
+## Life on the Mississippi
+
+- **Author:** Mark Twain (Samuel Clemens)
+- **Original publication:** 1883
+- **Source edition:** Project Gutenberg eBook #245
+- **Project Gutenberg record:** https://www.gutenberg.org/ebooks/245
+- **Source repository copy:** https://github.com/GITenberg/Life-on-the-Mississippi_245/blob/master/245-0.txt
+- **Preparation:** all sixty narrative chapters retained in order; title/front matter, table of contents, the separate opening appendix essay, appendices A–D, footnote placeholders referring to those appendices, and Project Gutenberg distribution/license text removed. Chapter headings and narrative prose are retained.
+
+The GITenberg source repository identifies this work as public domain. The book combines Twain's first-person account of learning the Mississippi as a pilot with later travel and historical narrative.
