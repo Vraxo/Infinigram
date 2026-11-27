@@ -52,6 +52,7 @@ internal static class PredictionEvaluationRunner
 
         EvaluateWithinCorpus(corpora, rows);
         EvaluateCrossCorpus(corpora, rows);
+        EvaluateCombinedCorpus(corpora, rows);
 
         string fullOutputPath = Path.GetFullPath(outputPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullOutputPath)!);
@@ -65,7 +66,7 @@ internal static class PredictionEvaluationRunner
         Console.WriteLine(
             $"Each evaluation samples up to {SampleCount} evenly spaced next-token targets.");
         Console.WriteLine(
-            "Within-corpus rows train on the first 80% and evaluate the final 20%; cross-corpus rows train on one full corpus and evaluate a different full corpus.");
+            "Within-corpus rows train on the first 80% and evaluate the final 20%; cross-corpus rows train on one full corpus and evaluate a different full corpus; combined-training rows add all other full corpora to the target corpus training split.");
         Console.WriteLine(
             "Predictions use teacher forcing. Contexts use word-index tokens, including punctuation. Log-probability and perplexity exclude out-of-vocabulary targets; coverage reports those separately.");
         Console.WriteLine(
@@ -122,6 +123,78 @@ internal static class PredictionEvaluationRunner
                 corpus.Name,
                 trainingTokens.Length,
                 trainingTokens,
+                validationTokens);
+        }
+    }
+
+    private static void EvaluateCombinedCorpus(
+        IReadOnlyList<CorpusData> corpora,
+        List<string> rows)
+    {
+        if (corpora.Count < 2)
+        {
+            return;
+        }
+
+        foreach (CorpusData evaluationCorpus in corpora)
+        {
+            int trainingEnd = (int)(evaluationCorpus.Text.Length * TrainingFraction);
+            while (trainingEnd < evaluationCorpus.Text.Length &&
+                   !char.IsWhiteSpace(evaluationCorpus.Text[trainingEnd]))
+            {
+                trainingEnd++;
+            }
+            while (trainingEnd < evaluationCorpus.Text.Length &&
+                   char.IsWhiteSpace(evaluationCorpus.Text[trainingEnd]))
+            {
+                trainingEnd++;
+            }
+
+            if (trainingEnd <= 0 || trainingEnd >= evaluationCorpus.Text.Length)
+            {
+                continue;
+            }
+
+            string targetTrainingText = evaluationCorpus.Text[..trainingEnd];
+            string validationText = evaluationCorpus.Text[trainingEnd..];
+            string[] initialContext = CorpusWordIndex.Tokenize(targetTrainingText).ToArray();
+            string[] validationTokens = CorpusWordIndex.Tokenize(validationText).ToArray();
+            if (initialContext.Length == 0 || validationTokens.Length == 0)
+            {
+                continue;
+            }
+
+            CorpusData[] additionalCorpora = corpora
+                .Where(corpus => !ReferenceEquals(corpus, evaluationCorpus) &&
+                    corpus.Text.Length > 0)
+                .ToArray();
+            if (additionalCorpora.Length == 0)
+            {
+                continue;
+            }
+
+            var trainingTexts = new List<string> { targetTrainingText };
+            trainingTexts.AddRange(additionalCorpora.Select(corpus => corpus.Text));
+            string combinedTrainingText = string.Join("\\0", trainingTexts);
+            int trainingTokenCount = CorpusWordIndex.Tokenize(combinedTrainingText).Count;
+            string trainingDescription =
+                $"{evaluationCorpus.Name} (80%) + " +
+                string.Join(" + ", additionalCorpora.Select(corpus => $"{corpus.Name} (full)"));
+
+            using var model = new NGramModel(combinedTrainingText);
+            var wordIndex = model.CreateWordIndex();
+            var vocabulary = wordIndex.Vocabulary.ToHashSet(
+                StringComparer.OrdinalIgnoreCase);
+
+            Evaluate(
+                rows,
+                wordIndex,
+                vocabulary,
+                "combined-training",
+                trainingDescription,
+                evaluationCorpus.Name,
+                trainingTokenCount,
+                initialContext,
                 validationTokens);
         }
     }
