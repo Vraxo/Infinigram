@@ -199,6 +199,36 @@ internal static class GenerationExperimentRunner
                         structuredEvaluation.Overlap.LongestMatch.ToString(CultureInfo.InvariantCulture),
                         structuredEvaluation.MeanLogProbability.ToString("0.000000", CultureInfo.InvariantCulture),
                         Csv(structuredText)));
+
+                    string sentenceFullText = wordIndex.GenerateSentence(
+                        promptText,
+                        maxWords: 24,
+                        temperature: temperature,
+                        topK: 40,
+                        rng: new Random(runSeed));
+                    string sentenceText = sentenceFullText.StartsWith(promptText, StringComparison.Ordinal)
+                        ? sentenceFullText[promptText.Length..]
+                        : string.Empty;
+                    int[] sentenceBytes = byteTokenizer.Encode(sentenceText).ToArray();
+                    GenerationEvaluation sentenceEvaluation = GenerationMetrics.Evaluate(
+                        byteModel, prompt, sentenceBytes, minimumSpan: MinimumSpan);
+
+                    rows.Add(string.Join(",",
+                        Csv(Path.GetFileName(corpusPath)),
+                        "word-next-token-sentence",
+                        wordIndex.VocabularySize.ToString(CultureInfo.InvariantCulture),
+                        trainingBytes.Length.ToString(CultureInfo.InvariantCulture),
+                        promptIndex.ToString(CultureInfo.InvariantCulture),
+                        (promptStart - validationStart).ToString(CultureInfo.InvariantCulture),
+                        temperature.ToString("0.##", CultureInfo.InvariantCulture),
+                        penalty.ToString("0.##", CultureInfo.InvariantCulture),
+                        runSeed.ToString(CultureInfo.InvariantCulture),
+                        CorpusWordIndex.Tokenize(sentenceText).Count.ToString(CultureInfo.InvariantCulture),
+                        "byte",
+                        sentenceEvaluation.Overlap.MatchedRatio.ToString("0.0000", CultureInfo.InvariantCulture),
+                        sentenceEvaluation.Overlap.LongestMatch.ToString(CultureInfo.InvariantCulture),
+                        sentenceEvaluation.MeanLogProbability.ToString("0.000000", CultureInfo.InvariantCulture),
+                        Csv(sentenceText)));
                 }
             }
 
