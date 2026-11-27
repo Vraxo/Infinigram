@@ -16,7 +16,7 @@ Suggested layout:
 ## Corpus requirements
 
 - Use plain UTF-8 text without a byte-order mark where possible.
-- Keep the source text unchanged; do not normalize or preprocess it for the benchmark.
+- Preserve source spelling, punctuation, and prose. Remove only distribution boilerplate when needed, and document extraction and cleanup steps below.
 - Record the source, edition, URL, and license/usage terms alongside the corpus
   (for example, in a neighbouring .source.md file).
 - Only add material that may legally be redistributed in this repository.
@@ -41,3 +41,20 @@ from training corpora.
 - **Preparation:** novel text retained; Gutenberg front/back matter, volume title pages, chapter headings, and illustration placeholders removed.
 
 Project Gutenberg identifies eBook #42671 as public domain in the United States. The corpus contains the novel's prose rather than its distribution metadata.
+
+
+## The Adventures of Sherlock Holmes
+
+- **Author:** Arthur Conan Doyle
+- **Original collection publication:** 1892
+- **Source text:** Sherlock Holmes Collection, version 3.1 — https://sherlock-holm.es
+- **Preparation:** all twelve story bodies and titles retained; title page, tables of contents, chapter-number markers, and collection/distribution footer removed.
+
+## On the Origin of Species
+
+- **Author:** Charles Darwin
+- **Original publication:** 1859, first edition
+- **Source edition:** Project Gutenberg eBook #1228
+- **Project Gutenberg record:** https://www.gutenberg.org/ebooks/1228
+- **Source repository copy:** https://github.com/GITenberg/On-the-Origin-of-Species-By-Means-of-Natural-Selection--13-Or-the-Preservation-of-Favoured-Rac__1228/blob/master/1228.txt
+- **Preparation:** introduction and complete fourteen-chapter body retained; title/front matter, table of contents, index, and Project Gutenberg distribution/license text removed. Original chapter and section headings are retained.
