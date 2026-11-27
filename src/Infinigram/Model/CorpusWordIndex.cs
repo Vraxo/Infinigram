@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -134,6 +135,46 @@ public sealed class CorpusWordIndex
 
         var counts = _continuations.Get(_suffixArray, ids, limit);
         return counts is null ? null : ToWords(counts);
+    }
+
+    /// <summary>
+    /// Returns the next-token probability distribution for the supplied context.
+    /// A context window of zero produces an unconditional unigram distribution.
+    /// </summary>
+    public IReadOnlyDictionary<string, double> PredictNext(
+        string context = "",
+        int contextWindow = 12,
+        int? topK = null)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (contextWindow < 0 || contextWindow > MaximumContextWords)
+        {
+            throw new ArgumentOutOfRangeException(nameof(contextWindow));
+        }
+        if (topK is < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(topK));
+        }
+
+        var current = PrepareContext(Tokenize(context));
+        if (current.Count > contextWindow)
+        {
+            current.RemoveRange(0, current.Count - contextWindow);
+        }
+        if (contextWindow == 0)
+        {
+            current.Clear();
+        }
+
+        var distribution = BuildDistribution(current, topK);
+        var result = new Dictionary<string, double>(
+            distribution.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var (token, probability) in distribution)
+        {
+            result[_vocabulary[token]] = probability;
+        }
+
+        return new ReadOnlyDictionary<string, double>(result);
     }
 
     /// <summary>
