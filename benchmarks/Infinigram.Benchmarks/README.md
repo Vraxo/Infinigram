@@ -49,3 +49,20 @@ The CSV identifies the evaluation mode, training corpus, and evaluation corpus, 
 The globally balanced mode is preferred for comparing source corpora because all source models have the same token budget. Compare combined-training results with the same target's within-corpus baseline to measure whether additional corpora help. More training text can increase coverage without improving top-1 accuracy or perplexity, so interpret all metrics together.
 
 This evaluates predictive consistency, not generated-text quality or semantic understanding. Within-corpus results measure prediction inside a work; cross-corpus results measure transfer between distinct works; combined-training results measure the effect of adding external books to an otherwise unchanged target-corpus training split. Results remain limited by the number and variety of available corpora.
+
+
+## Repeated-sample transfer inference
+
+The inferential follow-up compares the four source-genre → target-genre transfer groups using paired randomized target positions and a hierarchical block bootstrap:
+
+```sh
+dotnet run --project benchmarks/Infinigram.Benchmarks -- --evaluate-transfer-inference
+```
+
+The automated workflow uses 2,048 target positions per book, 2,000 bootstrap replicates, seed `20261127`, and context window 3. Override these with `--sample-count`, `--bootstrap-replicates`, `--seed`, and `--context-window`. Use `--output` and `--report-output` to choose output paths.
+
+For every evaluation book, lexical target positions are sampled without replacement within 32 contiguous text blocks. The exact same positions are scored by every external source model for that target, preserving paired comparisons. The evaluator reports globally balanced source training and a target-size-matched control. The globally balanced mode gives every source model the same word-index training-token budget. The size-matched mode caps each source to the target's 80% training-token count, matching the existing transfer benchmark.
+
+The report includes 95% percentile hierarchical bootstrap intervals. Each replicate resamples target books within target genre, source books within source genre (excluding self-transfer for same-genre comparisons), and contiguous target-text blocks. The block draws are shared across source models for each sampled target. The raw CSV stores per-pair block totals so the summary can be recomputed.
+
+These intervals describe variability across this selected set of books and their text blocks. The corpus set has only three fiction and five nonfiction works, so the intervals do not remove confounding by author, historical period, topic, or text type and should not be treated as proof of a universal genre effect. This benchmark evaluates lexical prediction only; it does not alter production model behavior.
