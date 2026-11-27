@@ -224,7 +224,7 @@ internal static class PredictionEvaluationRunner
             sampledBefore += segmentLength;
         }
 
-        return string.Join("\\0", segments);
+        return string.Join("\0", segments);
     }
 
     private static void EvaluateCombinedCorpus(
