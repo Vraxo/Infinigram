@@ -176,6 +176,7 @@ internal static class PredictionEvaluationRunner
                 string trainingText = BuildSizeMatchedTrainingText(
                     trainingCorpus.Tokens,
                     sampledTokens);
+                int trainingTokenCount = CorpusWordIndex.Tokenize(trainingText).Count;
 
                 using var model = new NGramModel(trainingText);
                 var wordIndex = model.CreateWordIndex();
@@ -189,7 +190,7 @@ internal static class PredictionEvaluationRunner
                     "cross-corpus-size-matched",
                     trainingCorpus.Name,
                     evaluationCorpus.Name,
-                    sampledTokens,
+                    trainingTokenCount,
                     [],
                     evaluationCorpus.Tokens);
             }
