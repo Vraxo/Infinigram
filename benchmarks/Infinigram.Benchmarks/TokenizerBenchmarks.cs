@@ -4,6 +4,7 @@ using Infinigram.Benchmarks.Core;
 
 namespace Infinigram.Benchmarks;
 
+[ShortRunJob]
 [MemoryDiagnoser]
 public class TokenizerBenchmarks
 {
