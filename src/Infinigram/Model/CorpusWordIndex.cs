@@ -624,7 +624,10 @@ public sealed class CorpusWordIndex
             pair => pair.Value.Count / (double)globalTotal,
             StringComparer.Ordinal);
 
-        int maximumContext = Math.Min(MaximumPhraseContextWords, context.Count);
+        int maximumContext = context.Count > 0 &&
+            !IsSentenceEnding(_vocabulary[context[^1]])
+                ? Math.Min(MaximumPhraseContextWords, context.Count)
+                : 0;
         for (int contextLength = 1; contextLength <= maximumContext; contextLength++)
         {
             var suffix = context.GetRange(context.Count - contextLength, contextLength);
