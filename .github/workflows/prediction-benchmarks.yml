@@ -46,6 +46,19 @@ jobs:
           --sample-count 2048
           --output prediction-evaluation.csv
 
+      - name: Evaluate paired transfer inference
+        run: >-
+          dotnet run --configuration Release
+          --project benchmarks/Infinigram.Benchmarks/Infinigram.Benchmarks.csproj
+          --
+          --evaluate-transfer-inference
+          --sample-count 2048
+          --bootstrap-replicates 2000
+          --seed 20261127
+          --context-window 3
+          --output transfer-inference.csv
+          --report-output transfer-inference.md
+
       - name: Upload benchmark results
         if: always()
         uses: actions/upload-artifact@v7
@@ -54,5 +67,7 @@ jobs:
           path: |
             BenchmarkDotNet.Artifacts
             prediction-evaluation.csv
+            transfer-inference.csv
+            transfer-inference.md
           if-no-files-found: warn
           retention-days: 30
