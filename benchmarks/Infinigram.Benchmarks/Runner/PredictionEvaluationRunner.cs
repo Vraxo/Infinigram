@@ -9,6 +9,7 @@ internal static class PredictionEvaluationRunner
 
     private const double TrainingFraction = 0.8;
     private const int SampleCount = 512;
+    private const int SizeMatchedSegmentCount = 16;
 
     internal static void Run(string[] args)
     {
@@ -53,6 +54,7 @@ internal static class PredictionEvaluationRunner
         EvaluateWithinCorpus(corpora, rows);
         EvaluateCrossCorpus(corpora, rows);
         EvaluateCombinedCorpus(corpora, rows);
+        EvaluateSizeMatchedCrossCorpus(corpora, rows);
 
         string fullOutputPath = Path.GetFullPath(outputPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullOutputPath)!);
@@ -125,6 +127,104 @@ internal static class PredictionEvaluationRunner
                 trainingTokens,
                 validationTokens);
         }
+    }
+
+    private static void EvaluateSizeMatchedCrossCorpus(
+        IReadOnlyList<CorpusData> corpora,
+        List<string> rows)
+    {
+        if (corpora.Count < 2)
+        {
+            return;
+        }
+
+        foreach (CorpusData evaluationCorpus in corpora)
+        {
+            int trainingEnd = (int)(evaluationCorpus.Text.Length * TrainingFraction);
+            while (trainingEnd < evaluationCorpus.Text.Length &&
+                   !char.IsWhiteSpace(evaluationCorpus.Text[trainingEnd]))
+            {
+                trainingEnd++;
+            }
+            while (trainingEnd < evaluationCorpus.Text.Length &&
+                   char.IsWhiteSpace(evaluationCorpus.Text[trainingEnd]))
+            {
+                trainingEnd++;
+            }
+
+            if (trainingEnd <= 0 || trainingEnd >= evaluationCorpus.Text.Length)
+            {
+                continue;
+            }
+
+            int trainingBudget = CorpusWordIndex.Tokenize(
+                evaluationCorpus.Text[..trainingEnd]).Count;
+            if (trainingBudget == 0)
+            {
+                continue;
+            }
+
+            foreach (CorpusData trainingCorpus in corpora)
+            {
+                if (ReferenceEquals(trainingCorpus, evaluationCorpus) ||
+                    trainingCorpus.Tokens.Length == 0)
+                {
+                    continue;
+                }
+
+                int sampledTokens = Math.Min(trainingBudget, trainingCorpus.Tokens.Length);
+                string trainingText = BuildSizeMatchedTrainingText(
+                    trainingCorpus.Tokens,
+                    sampledTokens);
+
+                using var model = new NGramModel(trainingText);
+                var wordIndex = model.CreateWordIndex();
+                var vocabulary = wordIndex.Vocabulary.ToHashSet(
+                    StringComparer.OrdinalIgnoreCase);
+
+                Evaluate(
+                    rows,
+                    wordIndex,
+                    vocabulary,
+                    "cross-corpus-size-matched",
+                    trainingCorpus.Name,
+                    evaluationCorpus.Name,
+                    sampledTokens,
+                    [],
+                    evaluationCorpus.Tokens);
+            }
+        }
+    }
+
+    private static string BuildSizeMatchedTrainingText(
+        IReadOnlyList<string> tokens,
+        int tokenBudget)
+    {
+        if (tokenBudget >= tokens.Count)
+        {
+            return string.Join(" ", tokens);
+        }
+
+        int segmentCount = Math.Min(SizeMatchedSegmentCount, tokenBudget);
+        int baseSegmentLength = tokenBudget / segmentCount;
+        int extraTokens = tokenBudget % segmentCount;
+        var segments = new List<string>(segmentCount);
+        int sourceRange = tokens.Count - tokenBudget;
+
+        int sampledBefore = 0;
+        for (int segment = 0; segment < segmentCount; segment++)
+        {
+            int segmentLength = baseSegmentLength + (segment < extraTokens ? 1 : 0);
+            int start = segmentCount == 1
+                ? 0
+                : (int)((long)segment * sourceRange / (segmentCount - 1))
+                    + sampledBefore;
+
+            segments.Add(string.Join(" ", tokens.Skip(start).Take(segmentLength)));
+            sampledBefore += segmentLength;
+        }
+
+        return string.Join("\\0", segments);
     }
 
     private static void EvaluateCombinedCorpus(
