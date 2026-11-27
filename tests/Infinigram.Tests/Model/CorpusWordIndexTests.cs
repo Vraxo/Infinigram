@@ -168,6 +168,37 @@ public class CorpusWordIndexTests
     }
 
     [Fact]
+    public void SentenceGenerationSupportsShortContextWindows()
+    {
+        using var model = new NGramModel("the cat sleeps. the dog runs.");
+        var words = model.CreateWordIndex();
+
+        string generated = words.GenerateSentence(
+            "the cat",
+            maxWords: 10,
+            temperature: 0.0,
+            topK: null,
+            rng: new Random(42),
+            contextWindow: 1);
+
+        generated.Should().Be("the cat sleeps.");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(13)]
+    public void SentenceGenerationRejectsInvalidContextWindows(int contextWindow)
+    {
+        using var model = new NGramModel("the cat sleeps.");
+        var words = model.CreateWordIndex();
+
+        Action generate = () => words.GenerateSentence(contextWindow: contextWindow);
+
+        generate.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("contextWindow");
+    }
+
+    [Fact]
     public void SentenceGenerationPreservesUnknownContext()
     {
         using var model = new NGramModel("the cat sleeps.");
