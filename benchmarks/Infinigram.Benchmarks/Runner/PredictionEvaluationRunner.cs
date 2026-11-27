@@ -175,7 +175,7 @@ internal static class PredictionEvaluationRunner
 
             var trainingTexts = new List<string> { targetTrainingText };
             trainingTexts.AddRange(additionalCorpora.Select(corpus => corpus.Text));
-            string combinedTrainingText = string.Join("\\0", trainingTexts);
+            string combinedTrainingText = string.Join("\0", trainingTexts);
             int trainingTokenCount = CorpusWordIndex.Tokenize(combinedTrainingText).Count;
             string trainingDescription =
                 $"{evaluationCorpus.Name} (80%) + " +
