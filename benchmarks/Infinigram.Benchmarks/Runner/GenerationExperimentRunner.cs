@@ -57,12 +57,11 @@ internal static class GenerationExperimentRunner
 
             string trainingText = corpus[..trainingCharacters];
             byte[] trainingBytes = Encoding.UTF8.GetBytes(trainingText);
-            int[] promptStarts =
-            [
-                validationStart + validationSpan / 10,
-                validationStart + validationSpan / 2,
-                validationStart + validationSpan * 9 / 10
-            ];
+            const int promptCount = 24;
+            int[] promptStarts = Enumerable.Range(0, promptCount)
+                .Select(index => validationStart +
+                    (int)((index + 0.5) * validationSpan / promptCount))
+                .ToArray();
 
             foreach ((string tokenizerName, int vocabularySize) in Tokenizers)
             {
