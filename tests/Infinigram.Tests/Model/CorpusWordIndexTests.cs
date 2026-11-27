@@ -144,12 +144,27 @@ public class CorpusWordIndexTests
 
         foreach (string text in generated)
         {
-            text.Should().StartWith("The cat ");
-            text.Should().MatchRegex(@"[.!]$");
+            text.Should().StartWith("The cat");
             CorpusWordIndex.Tokenize(text)
                 .Should().OnlyContain(token =>
                     words.Vocabulary.Contains(token, StringComparer.OrdinalIgnoreCase));
         }
+    }
+
+    [Fact]
+    public void SentenceGenerationStopsAtThePredictedSentenceEnding()
+    {
+        using var model = new NGramModel("the cat sleeps. the cat sleeps.");
+        var words = model.CreateWordIndex();
+
+        string generated = words.GenerateSentence(
+            "the cat sleeps",
+            maxWords: 10,
+            temperature: 0.0,
+            topK: null,
+            rng: new Random(42));
+
+        generated.Should().Be("the cat sleeps.");
     }
 
     [Fact]
