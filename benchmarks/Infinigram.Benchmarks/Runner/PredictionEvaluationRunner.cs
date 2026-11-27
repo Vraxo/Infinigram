@@ -192,7 +192,7 @@ internal static class PredictionEvaluationRunner
                     rows,
                     wordIndex,
                     vocabulary,
-                sampleCount,
+                    sampleCount,
                     "cross-corpus-size-matched",
                     trainingCorpus.Name,
                     evaluationCorpus.Name,
@@ -275,7 +275,7 @@ internal static class PredictionEvaluationRunner
                     rows,
                     wordIndex,
                     vocabulary,
-                sampleCount,
+                    sampleCount,
                     "cross-corpus-balanced",
                     trainingCorpus.Name,
                     evaluationCorpus.Name,
@@ -394,7 +394,7 @@ internal static class PredictionEvaluationRunner
                     rows,
                     wordIndex,
                     vocabulary,
-                sampleCount,
+                    sampleCount,
                     "cross-corpus",
                     trainingCorpus.Name,
                     evaluationCorpus.Name,
@@ -572,7 +572,11 @@ internal static class PredictionEvaluationRunner
             return DefaultSampleCount;
         }
         if (index + 1 >= args.Length ||
-            !int.TryParse(args[index + 1], NumberStyles.None, CultureInfo.InvariantCulture, out int sampleCount) ||
+            !int.TryParse(
+                args[index + 1],
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out int sampleCount) ||
             sampleCount < 1)
         {
             throw new ArgumentException("--sample-count requires a positive integer.");
