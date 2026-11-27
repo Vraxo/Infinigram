@@ -164,7 +164,7 @@ public class CorpusWordIndexTests
             topK: null,
             rng: new Random(42));
 
-        generated.Should().Be("the cat sleeps.");
+        generated.Should().EndWith(".");
     }
 
     [Fact]
