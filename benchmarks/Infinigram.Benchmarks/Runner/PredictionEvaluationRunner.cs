@@ -1,0 +1,253 @@
+using System.Globalization;
+using System.Text;
+
+namespace Infinigram.Benchmarks.Runner;
+
+internal static class PredictionEvaluationRunner
+{
+    private static readonly int[] ContextWindows = [0, 1, 3, 6, 12];
+
+    private const double TrainingFraction = 0.8;
+    private const int SampleCount = 512;
+
+    internal static void Run(string[] args)
+    {
+        if (args.Contains("--help", StringComparer.Ordinal) ||
+            args.Contains("-h", StringComparer.Ordinal))
+        {
+            Console.WriteLine(
+                "Usage: dotnet run --project benchmarks/Infinigram.Benchmarks -- --evaluate-prediction [--output path]");
+            return;
+        }
+
+        string outputPath = GetOutputPath(args);
+        string corpusDirectory = Path.Combine(
+            AppContext.BaseDirectory, "Resources", "Corpora");
+        string[] corpusPaths = Directory.Exists(corpusDirectory)
+            ? Directory.GetFiles(corpusDirectory, "*.txt", SearchOption.AllDirectories)
+                .Order(StringComparer.OrdinalIgnoreCase)
+                .ToArray()
+            : [];
+
+        if (corpusPaths.Length == 0)
+        {
+            throw new DirectoryNotFoundException(
+                $"No .txt corpora found in '{corpusDirectory}'.");
+        }
+
+        var rows = new List<string>
+        {
+            "corpus,training_tokens,validation_tokens,sampled_tokens,sampled_words,context_window_tokens,token_coverage,word_coverage,top1_accuracy,word_top1_accuracy,mean_log_probability,mean_word_log_probability,perplexity,word_perplexity"
+        };
+
+        foreach (string corpusPath in corpusPaths)
+        {
+            string corpus = File.ReadAllText(corpusPath, Encoding.UTF8);
+            int trainingEnd = (int)(corpus.Length * TrainingFraction);
+            while (trainingEnd < corpus.Length && !char.IsWhiteSpace(corpus[trainingEnd]))
+            {
+                trainingEnd++;
+            }
+            while (trainingEnd < corpus.Length && char.IsWhiteSpace(corpus[trainingEnd]))
+            {
+                trainingEnd++;
+            }
+
+            if (trainingEnd <= 0 || trainingEnd >= corpus.Length)
+            {
+                Console.Error.WriteLine(
+                    $"Skipping {Path.GetFileName(corpusPath)}: corpus is too small for a held-out split.");
+                continue;
+            }
+
+            string trainingText = corpus[..trainingEnd];
+            string validationText = corpus[trainingEnd..];
+            string[] trainingTokens = CorpusWordIndex.Tokenize(trainingText).ToArray();
+            string[] validationTokens = CorpusWordIndex.Tokenize(validationText).ToArray();
+            if (trainingTokens.Length == 0 || validationTokens.Length == 0)
+            {
+                Console.Error.WriteLine(
+                    $"Skipping {Path.GetFileName(corpusPath)}: split produced no tokens.");
+                continue;
+            }
+
+            using var model = new NGramModel(trainingText);
+            var wordIndex = model.CreateWordIndex();
+            var vocabulary = wordIndex.Vocabulary.ToHashSet(
+                StringComparer.OrdinalIgnoreCase);
+            int[] samplePositions = GetSamplePositions(validationTokens.Length);
+
+            foreach (int contextWindow in ContextWindows)
+            {
+                var history = trainingTokens
+                    .Skip(Math.Max(0, trainingTokens.Length - contextWindow))
+                    .ToList();
+
+                int correctTokens = 0;
+                int coveredTokens = 0;
+                int wordTargets = 0;
+                int correctWords = 0;
+                int coveredWords = 0;
+                double totalLogProbability = 0.0;
+                double totalWordLogProbability = 0.0;
+                int nextSample = 0;
+
+                for (int position = 0; position < validationTokens.Length; position++)
+                {
+                    string target = validationTokens[position];
+                    if (nextSample < samplePositions.Length &&
+                        position == samplePositions[nextSample])
+                    {
+                        var predictions = wordIndex.PredictNext(
+                            string.Join(" ", history),
+                            contextWindow);
+                        string bestPrediction = GetMostLikelyToken(predictions);
+                        bool isWord = IsWordToken(target);
+                        bool isCovered = vocabulary.Contains(target);
+                        bool isCorrect = string.Equals(
+                            bestPrediction, target, StringComparison.OrdinalIgnoreCase);
+
+                        if (isCorrect)
+                        {
+                            correctTokens++;
+                        }
+
+                        if (isCovered)
+                        {
+                            coveredTokens++;
+                            double probability = predictions[target];
+                            totalLogProbability += Math.Log(probability);
+                        }
+
+                        if (isWord)
+                        {
+                            wordTargets++;
+                            if (isCorrect)
+                            {
+                                correctWords++;
+                            }
+                            if (isCovered)
+                            {
+                                coveredWords++;
+                                totalWordLogProbability += Math.Log(predictions[target]);
+                            }
+                        }
+
+                        nextSample++;
+                    }
+
+                    if (contextWindow > 0)
+                    {
+                        history.Add(target);
+                        if (history.Count > contextWindow)
+                        {
+                            history.RemoveAt(0);
+                        }
+                    }
+                }
+
+                double tokenCoverage = Ratio(coveredTokens, samplePositions.Length);
+                double wordCoverage = Ratio(coveredWords, wordTargets);
+                double top1Accuracy = Ratio(correctTokens, samplePositions.Length);
+                double wordTop1Accuracy = Ratio(correctWords, wordTargets);
+                double meanLogProbability = coveredTokens == 0
+                    ? 0.0
+                    : totalLogProbability / coveredTokens;
+                double meanWordLogProbability = coveredWords == 0
+                    ? 0.0
+                    : totalWordLogProbability / coveredWords;
+
+                rows.Add(string.Join(",",
+                    Csv(Path.GetFileName(corpusPath)),
+                    trainingTokens.Length.ToString(CultureInfo.InvariantCulture),
+                    validationTokens.Length.ToString(CultureInfo.InvariantCulture),
+                    samplePositions.Length.ToString(CultureInfo.InvariantCulture),
+                    wordTargets.ToString(CultureInfo.InvariantCulture),
+                    contextWindow.ToString(CultureInfo.InvariantCulture),
+                    tokenCoverage.ToString("0.0000", CultureInfo.InvariantCulture),
+                    wordCoverage.ToString("0.0000", CultureInfo.InvariantCulture),
+                    top1Accuracy.ToString("0.0000", CultureInfo.InvariantCulture),
+                    wordTop1Accuracy.ToString("0.0000", CultureInfo.InvariantCulture),
+                    meanLogProbability.ToString("0.000000", CultureInfo.InvariantCulture),
+                    meanWordLogProbability.ToString("0.000000", CultureInfo.InvariantCulture),
+                    Math.Exp(-meanLogProbability).ToString("0.0000", CultureInfo.InvariantCulture),
+                    Math.Exp(-meanWordLogProbability).ToString("0.0000", CultureInfo.InvariantCulture)));
+
+                Console.WriteLine(
+                    $"{Path.GetFileName(corpusPath)}: context={contextWindow}, " +
+                    $"top-1={top1Accuracy:P1}, word top-1={wordTop1Accuracy:P1}, " +
+                    $"coverage={tokenCoverage:P1}, mean log-probability={meanLogProbability:F3}");
+            }
+        }
+
+        string fullOutputPath = Path.GetFullPath(outputPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullOutputPath)!);
+        File.WriteAllText(
+            fullOutputPath,
+            string.Join(Environment.NewLine, rows) + Environment.NewLine,
+            new UTF8Encoding(false));
+
+        Console.WriteLine(
+            $"Wrote {rows.Count - 1} prediction evaluation rows to {fullOutputPath}");
+        Console.WriteLine(
+            $"Each row evaluates up to {SampleCount} evenly spaced next-token targets from the held-out final 20%.");
+        Console.WriteLine(
+            "Contexts use word-index tokens, including punctuation. Log-probability and perplexity exclude out-of-vocabulary targets; coverage reports those separately.");
+        Console.WriteLine(
+            "Top-1 accuracy counts out-of-vocabulary targets as incorrect. The word metrics include lexical tokens only.");
+    }
+
+    private static int[] GetSamplePositions(int tokenCount)
+    {
+        int count = Math.Min(SampleCount, tokenCount);
+        if (count == 1)
+        {
+            return [0];
+        }
+
+        return Enumerable.Range(0, count)
+            .Select(index => (int)((long)index * (tokenCount - 1) / (count - 1)))
+            .ToArray();
+    }
+
+    private static string GetMostLikelyToken(
+        IReadOnlyDictionary<string, double> predictions)
+    {
+        string bestToken = string.Empty;
+        double bestProbability = double.NegativeInfinity;
+        foreach (var (token, probability) in predictions)
+        {
+            if (probability > bestProbability)
+            {
+                bestToken = token;
+                bestProbability = probability;
+            }
+        }
+
+        return bestToken;
+    }
+
+    private static bool IsWordToken(string token) =>
+        token.Any(character => char.IsLetterOrDigit(character) || character == '_');
+
+    private static double Ratio(int numerator, int denominator) =>
+        denominator == 0 ? 0.0 : numerator / (double)denominator;
+
+    private static string GetOutputPath(string[] args)
+    {
+        int index = Array.IndexOf(args, "--output");
+        if (index < 0)
+        {
+            return "prediction-evaluation.csv";
+        }
+        if (index + 1 >= args.Length || string.IsNullOrWhiteSpace(args[index + 1]))
+        {
+            throw new ArgumentException("--output requires a file path.");
+        }
+
+        return args[index + 1];
+    }
+
+    private static string Csv(string value) =>
+        "\"" + value.Replace("\"", "\"\"") + "\"";
+}

@@ -53,6 +53,57 @@ public class CorpusWordIndexTests
     }
 
     [Fact]
+    public void PredictNextReturnsNormalizedCorpusProbabilities()
+    {
+        using var model = new NGramModel("The cat sat. The cat ran. The dog slept.");
+        var words = model.CreateWordIndex();
+
+        var predictions = words.PredictNext("the cat", contextWindow: 2);
+
+        predictions.Should().ContainKeys("sat", "ran");
+        predictions.Values.Sum().Should().BeApproximately(1.0, 1e-10);
+        predictions.Should().OnlyContain(pair => pair.Value > 0.0);
+    }
+
+    [Fact]
+    public void PredictNextSupportsAnUnconditionalUnigramBaseline()
+    {
+        using var model = new NGramModel("the cat sat. the dog ran.");
+        var words = model.CreateWordIndex();
+
+        var contextual = words.PredictNext("the cat", contextWindow: 0);
+        var unconditional = words.PredictNext();
+
+        contextual.Should().BeEquivalentTo(unconditional);
+    }
+
+    [Fact]
+    public void PredictNextCanLimitAndRenormalizeCandidates()
+    {
+        using var model = new NGramModel("the cat sat. the cat ran. the dog slept.");
+        var words = model.CreateWordIndex();
+
+        var predictions = words.PredictNext("the cat", contextWindow: 2, topK: 1);
+
+        predictions.Should().ContainSingle();
+        predictions.Values.Sum().Should().BeApproximately(1.0, 1e-10);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(13)]
+    public void PredictNextRejectsInvalidContextWindows(int contextWindow)
+    {
+        using var model = new NGramModel("the cat sleeps.");
+        var words = model.CreateWordIndex();
+
+        Action predict = () => words.PredictNext(contextWindow: contextWindow);
+
+        predict.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("contextWindow");
+    }
+
+    [Fact]
     public void GenerationUsesOnlyCorpusVocabulary()
     {
         using var model = new NGramModel("The cat sat. The cat ran.");
@@ -125,6 +176,89 @@ public class CorpusWordIndexTests
     }
 
     [Fact]
+    public void SentenceGenerationPredictsWordsAndSentenceEndingFromCorpus()
+    {
+        using var model = new NGramModel("The cat sleeps. The cat runs!");
+        var words = model.CreateWordIndex();
+
+        var generated = Enumerable.Range(1, 64)
+            .Select(seed => words.GenerateSentence(
+                "The cat",
+                maxWords: 10,
+                temperature: 1.0,
+                topK: null,
+                rng: new Random(seed)))
+            .ToArray();
+
+        generated.Should().Contain(text => text.EndsWith(".", StringComparison.Ordinal));
+        generated.Should().Contain(text => text.EndsWith("!", StringComparison.Ordinal));
+
+        foreach (string text in generated)
+        {
+            text.Should().StartWith("The cat");
+            CorpusWordIndex.Tokenize(text)
+                .Should().OnlyContain(token =>
+                    words.Vocabulary.Contains(token, StringComparer.OrdinalIgnoreCase));
+        }
+    }
+
+    [Fact]
+    public void SentenceGenerationStopsAtThePredictedSentenceEnding()
+    {
+        using var model = new NGramModel("the cat sleeps. the cat sleeps.");
+        var words = model.CreateWordIndex();
+
+        string generated = words.GenerateSentence(
+            "the cat sleeps",
+            maxWords: 10,
+            temperature: 0.0,
+            topK: null,
+            rng: new Random(42));
+
+        generated.Should().EndWith(".");
+    }
+
+    [Fact]
+    public void SentenceGenerationSupportsShortContextWindows()
+    {
+        using var model = new NGramModel("the cat sleeps. the dog runs.");
+        var words = model.CreateWordIndex();
+
+        string generated = words.GenerateSentence(
+            "the cat",
+            maxWords: 10,
+            temperature: 0.0,
+            topK: null,
+            rng: new Random(42),
+            contextWindow: 1);
+
+        generated.Should().Be("the cat sleeps.");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(13)]
+    public void SentenceGenerationRejectsInvalidContextWindows(int contextWindow)
+    {
+        using var model = new NGramModel("the cat sleeps.");
+        var words = model.CreateWordIndex();
+
+        Action generate = () => words.GenerateSentence(contextWindow: contextWindow);
+
+        generate.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("contextWindow");
+    }
+
+    [Fact]
+    public void SentenceGenerationPreservesUnknownContext()
+    {
+        using var model = new NGramModel("the cat sleeps.");
+        var words = model.CreateWordIndex();
+
+        words.GenerateSentence("unknown context").Should().Be("unknown context");
+    }
+
+    [Fact]
     public void StructuredGenerationUsesOnlyObservedSentenceLayouts()
     {
         using var model = new NGramModel("The cat sleeps. A dog runs, jumps, and plays!");
@@ -164,6 +298,28 @@ public class CorpusWordIndexTests
             tokens.Should().OnlyContain(token =>
                 words.Vocabulary.Contains(token, StringComparer.OrdinalIgnoreCase));
         }
+    }
+
+    [Fact]
+    public void SentenceShapeDoesNotUseTheFollowingSentenceAfterTerminalPromptPunctuation()
+    {
+        using var model = new NGramModel(
+            "alpha beta. tiny. red fox jumps. green bird flies!");
+        var words = model.CreateWordIndex();
+
+        var generated = Enumerable.Range(1, 128)
+            .Select(seed => words.GenerateStructuredText(
+                "alpha beta.",
+                maxWords: 5,
+                temperature: 1.0,
+                topK: null,
+                rng: new Random(seed)))
+            .Select(text => CorpusWordIndex.Tokenize(text)
+                .Count(token => token.Any(char.IsLetterOrDigit)))
+            .Distinct()
+            .ToArray();
+
+        generated.Should().Contain(3);
     }
 
     [Fact]

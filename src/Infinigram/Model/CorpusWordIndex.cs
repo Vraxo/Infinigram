@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -137,6 +138,46 @@ public sealed class CorpusWordIndex
     }
 
     /// <summary>
+    /// Returns the next-token probability distribution for the supplied context.
+    /// A context window of zero produces an unconditional unigram distribution.
+    /// </summary>
+    public IReadOnlyDictionary<string, double> PredictNext(
+        string context = "",
+        int contextWindow = 12,
+        int? topK = null)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (contextWindow < 0 || contextWindow > MaximumContextWords)
+        {
+            throw new ArgumentOutOfRangeException(nameof(contextWindow));
+        }
+        if (topK is < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(topK));
+        }
+
+        var current = PrepareContext(Tokenize(context));
+        if (current.Count > contextWindow)
+        {
+            current.RemoveRange(0, current.Count - contextWindow);
+        }
+        if (contextWindow == 0)
+        {
+            current.Clear();
+        }
+
+        var distribution = BuildDistribution(current, topK);
+        var result = new Dictionary<string, double>(
+            distribution.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var (token, probability) in distribution)
+        {
+            result[_vocabulary[token]] = probability;
+        }
+
+        return new ReadOnlyDictionary<string, double>(result);
+    }
+
+    /// <summary>
     /// Generates a word-level continuation by sampling only tokens observed in this corpus.
     /// Generated-token spacing is normalized; punctuation is attached conventionally.
     /// </summary>
@@ -176,6 +217,84 @@ public sealed class CorpusWordIndex
             int next = Sampling.SampleFromDistribution(probabilities, temperature, rng);
             AppendToken(output, _vocabulary[next]);
             AddContextToken(current, next);
+        }
+
+        return output.ToString();
+    }
+
+    /// <summary>
+    /// Generates a sentence by predicting each corpus token, including punctuation,
+    /// and stopping when the model emits a sentence-ending token.
+    /// </summary>
+    public string GenerateSentence(
+        string context = "",
+        int maxWords = 40,
+        double temperature = 0.8,
+        int? topK = 30,
+        Random? rng = null,
+        int contextWindow = 12)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (maxWords < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxWords));
+        }
+        if (!double.IsFinite(temperature) || temperature < 0.0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(temperature));
+        }
+        if (contextWindow < 1 || contextWindow > MaximumContextWords)
+        {
+            throw new ArgumentOutOfRangeException(nameof(contextWindow));
+        }
+
+        var contextWords = Tokenize(context);
+        var current = PrepareContext(contextWords);
+        if (contextWords.Count > 0 && current.Count == 0)
+        {
+            return context;
+        }
+        if (current.Count > contextWindow)
+        {
+            current.RemoveRange(0, current.Count - contextWindow);
+        }
+
+        var output = new StringBuilder(context);
+        int generatedWords = 0;
+        int maximumSteps = maxWords * 2 + 8;
+        Random random = rng ?? Random.Shared;
+
+        for (int step = 0; step < maximumSteps && generatedWords < maxWords; step++)
+        {
+            var probabilities = BuildDistribution(current, topK, denseBackoff: true);
+            if (generatedWords == 0)
+            {
+                foreach (int endingTokenId in probabilities.Keys
+                    .Where(tokenId => IsSentenceEnding(_vocabulary[tokenId]))
+                    .ToArray())
+                {
+                    probabilities.Remove(endingTokenId);
+                }
+            }
+
+            if (probabilities.Count == 0)
+            {
+                break;
+            }
+
+            int next = Sampling.SampleFromDistribution(probabilities, temperature, random);
+            string token = _vocabulary[next];
+            AppendToken(output, token);
+            AddContextToken(current, next, contextWindow);
+
+            if (IsWordToken(token))
+            {
+                generatedWords++;
+            }
+            else if (IsSentenceEnding(token))
+            {
+                break;
+            }
         }
 
         return output.ToString();
@@ -281,6 +400,15 @@ public sealed class CorpusWordIndex
     {
         context.Add(token);
         if (context.Count > MaximumContextWords)
+        {
+            context.RemoveAt(0);
+        }
+    }
+
+    private static void AddContextToken(List<int> context, int token, int maximumLength)
+    {
+        context.Add(token);
+        if (context.Count > maximumLength)
         {
             context.RemoveAt(0);
         }
@@ -415,10 +543,13 @@ public sealed class CorpusWordIndex
         return result;
     }
 
-    private Dictionary<int, double> BuildDistribution(List<int> context, int? topK)
+    private Dictionary<int, double> BuildDistribution(
+        List<int> context, int? topK, bool denseBackoff = false)
     {
         var distribution = ToProbabilities(_unigramCounts);
-        var orders = GetBackoffOrders(context.Count);
+        var orders = denseBackoff
+            ? Enumerable.Range(1, context.Count).Reverse().ToList()
+            : GetBackoffOrders(context.Count);
 
         for (int i = orders.Count - 1; i >= 0; i--)
         {
@@ -624,7 +755,10 @@ public sealed class CorpusWordIndex
             pair => pair.Value.Count / (double)globalTotal,
             StringComparer.Ordinal);
 
-        int maximumContext = Math.Min(MaximumPhraseContextWords, context.Count);
+        int maximumContext = context.Count > 0 &&
+            !IsSentenceEnding(_vocabulary[context[^1]])
+                ? Math.Min(MaximumPhraseContextWords, context.Count)
+                : 0;
         for (int contextLength = 1; contextLength <= maximumContext; contextLength++)
         {
             var suffix = context.GetRange(context.Count - contextLength, contextLength);
