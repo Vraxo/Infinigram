@@ -182,6 +182,65 @@ public sealed class CorpusWordIndex
     }
 
     /// <summary>
+    /// Generates a sentence by predicting each corpus token, including punctuation,
+    /// and stopping when the model emits a sentence-ending token.
+    /// </summary>
+    public string GenerateSentence(
+        string context = "",
+        int maxWords = 40,
+        double temperature = 0.8,
+        int? topK = 30,
+        Random? rng = null)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        if (maxWords < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxWords));
+        }
+        if (!double.IsFinite(temperature) || temperature < 0.0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(temperature));
+        }
+
+        var contextWords = Tokenize(context);
+        var current = PrepareContext(contextWords);
+        if (contextWords.Count > 0 && current.Count == 0)
+        {
+            return context;
+        }
+
+        var output = new StringBuilder(context);
+        int generatedWords = 0;
+        int maximumSteps = maxWords * 2 + 8;
+        Random random = rng ?? Random.Shared;
+
+        for (int step = 0; step < maximumSteps && generatedWords < maxWords; step++)
+        {
+            var probabilities = BuildDistribution(current, topK);
+            if (probabilities.Count == 0)
+            {
+                break;
+            }
+
+            int next = Sampling.SampleFromDistribution(probabilities, temperature, random);
+            string token = _vocabulary[next];
+            AppendToken(output, token);
+            AddContextToken(current, next);
+
+            if (IsWordToken(token))
+            {
+                generatedWords++;
+            }
+            else if (IsSentenceEnding(token))
+            {
+                break;
+            }
+        }
+
+        return output.ToString();
+    }
+
+    /// <summary>
     /// Generates one sentence using a clause-length and punctuation layout sampled from the corpus.
     /// Short phrase continuations are interpolated across corpus context lengths; word-level
     /// continuation counts provide the fallback when no observed phrase chunk fits.
