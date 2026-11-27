@@ -43,6 +43,7 @@ jobs:
           --project benchmarks/Infinigram.Benchmarks/Infinigram.Benchmarks.csproj
           --
           --evaluate-prediction
+          --sample-count 2048
           --output prediction-evaluation.csv
 
       - name: Upload benchmark results
