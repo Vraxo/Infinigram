@@ -216,7 +216,7 @@ public sealed class CorpusWordIndex
 
         for (int step = 0; step < maximumSteps && generatedWords < maxWords; step++)
         {
-            var probabilities = BuildDistribution(current, topK);
+            var probabilities = BuildDistribution(current, topK, denseBackoff: true);
             if (generatedWords == 0)
             {
                 foreach (int endingTokenId in probabilities.Keys
@@ -484,10 +484,13 @@ public sealed class CorpusWordIndex
         return result;
     }
 
-    private Dictionary<int, double> BuildDistribution(List<int> context, int? topK)
+    private Dictionary<int, double> BuildDistribution(
+        List<int> context, int? topK, bool denseBackoff = false)
     {
         var distribution = ToProbabilities(_unigramCounts);
-        var orders = GetBackoffOrders(context.Count);
+        var orders = denseBackoff
+            ? Enumerable.Range(1, context.Count).Reverse().ToList()
+            : GetBackoffOrders(context.Count);
 
         for (int i = orders.Count - 1; i >= 0; i--)
         {
