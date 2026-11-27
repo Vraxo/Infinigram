@@ -8,7 +8,7 @@ internal static class PredictionEvaluationRunner
     private static readonly int[] ContextWindows = [0, 1, 3, 6, 12];
 
     private const double TrainingFraction = 0.8;
-    private const int SampleCount = 512;
+    private const int DefaultSampleCount = 512;
     private const int SizeMatchedSegmentCount = 16;
 
     internal static void Run(string[] args)
@@ -17,10 +17,11 @@ internal static class PredictionEvaluationRunner
             args.Contains("-h", StringComparer.Ordinal))
         {
             Console.WriteLine(
-                "Usage: dotnet run --project benchmarks/Infinigram.Benchmarks -- --evaluate-prediction [--output path]");
+                "Usage: dotnet run --project benchmarks/Infinigram.Benchmarks -- --evaluate-prediction [--sample-count N] [--output path]");
             return;
         }
 
+        int sampleCount = GetSampleCount(args);
         string outputPath = GetOutputPath(args);
         string corpusDirectory = Path.Combine(
             AppContext.BaseDirectory, "Resources", "Corpora");
@@ -51,11 +52,11 @@ internal static class PredictionEvaluationRunner
             "evaluation_mode,training_corpus,evaluation_corpus,training_tokens,evaluation_tokens,sampled_tokens,sampled_words,context_window_tokens,token_coverage,word_coverage,top1_accuracy,word_top1_accuracy,mean_log_probability,mean_word_log_probability,perplexity,word_perplexity"
         };
 
-        EvaluateWithinCorpus(corpora, rows);
-        EvaluateCrossCorpus(corpora, rows);
-        EvaluateCombinedCorpus(corpora, rows);
-        EvaluateSizeMatchedCrossCorpus(corpora, rows);
-        EvaluateBalancedCrossCorpus(corpora, rows);
+        EvaluateWithinCorpus(corpora, rows, sampleCount);
+        EvaluateCrossCorpus(corpora, rows, sampleCount);
+        EvaluateCombinedCorpus(corpora, rows, sampleCount);
+        EvaluateSizeMatchedCrossCorpus(corpora, rows, sampleCount);
+        EvaluateBalancedCrossCorpus(corpora, rows, sampleCount);
 
         string fullOutputPath = Path.GetFullPath(outputPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullOutputPath)!);
@@ -67,7 +68,7 @@ internal static class PredictionEvaluationRunner
         Console.WriteLine(
             $"Wrote {rows.Count - 1} prediction evaluation rows to {fullOutputPath}");
         Console.WriteLine(
-            $"Each evaluation samples up to {SampleCount} evenly spaced next-token targets.");
+            $"Each evaluation samples up to {sampleCount} evenly spaced next-token targets.");
         Console.WriteLine(
             "Within-corpus rows train on the first 80% and evaluate the final 20%; cross-corpus rows train on one full corpus and evaluate a different full corpus; combined-training rows add all other full corpora to the target corpus training split.");
         Console.WriteLine(
@@ -78,7 +79,8 @@ internal static class PredictionEvaluationRunner
 
     private static void EvaluateWithinCorpus(
         IReadOnlyList<CorpusData> corpora,
-        List<string> rows)
+        List<string> rows,
+        int sampleCount)
     {
         foreach (CorpusData corpus in corpora)
         {
@@ -121,6 +123,7 @@ internal static class PredictionEvaluationRunner
                 rows,
                 wordIndex,
                 vocabulary,
+                sampleCount,
                 "within-corpus",
                 corpus.Name,
                 corpus.Name,
@@ -132,7 +135,8 @@ internal static class PredictionEvaluationRunner
 
     private static void EvaluateSizeMatchedCrossCorpus(
         IReadOnlyList<CorpusData> corpora,
-        List<string> rows)
+        List<string> rows,
+        int sampleCount)
     {
         if (corpora.Count < 2)
         {
@@ -188,6 +192,7 @@ internal static class PredictionEvaluationRunner
                     rows,
                     wordIndex,
                     vocabulary,
+                sampleCount,
                     "cross-corpus-size-matched",
                     trainingCorpus.Name,
                     evaluationCorpus.Name,
@@ -232,7 +237,8 @@ internal static class PredictionEvaluationRunner
 
     private static void EvaluateBalancedCrossCorpus(
         IReadOnlyList<CorpusData> corpora,
-        List<string> rows)
+        List<string> rows,
+        int sampleCount)
     {
         if (corpora.Count < 2)
         {
@@ -269,6 +275,7 @@ internal static class PredictionEvaluationRunner
                     rows,
                     wordIndex,
                     vocabulary,
+                sampleCount,
                     "cross-corpus-balanced",
                     trainingCorpus.Name,
                     evaluationCorpus.Name,
@@ -281,7 +288,8 @@ internal static class PredictionEvaluationRunner
 
     private static void EvaluateCombinedCorpus(
         IReadOnlyList<CorpusData> corpora,
-        List<string> rows)
+        List<string> rows,
+        int sampleCount)
     {
         if (corpora.Count < 2)
         {
@@ -342,6 +350,7 @@ internal static class PredictionEvaluationRunner
                 rows,
                 wordIndex,
                 vocabulary,
+                sampleCount,
                 "combined-training",
                 trainingDescription,
                 evaluationCorpus.Name,
@@ -353,7 +362,8 @@ internal static class PredictionEvaluationRunner
 
     private static void EvaluateCrossCorpus(
         IReadOnlyList<CorpusData> corpora,
-        List<string> rows)
+        List<string> rows,
+        int sampleCount)
     {
         if (corpora.Count < 2)
         {
@@ -384,6 +394,7 @@ internal static class PredictionEvaluationRunner
                     rows,
                     wordIndex,
                     vocabulary,
+                sampleCount,
                     "cross-corpus",
                     trainingCorpus.Name,
                     evaluationCorpus.Name,
@@ -398,6 +409,7 @@ internal static class PredictionEvaluationRunner
         List<string> rows,
         CorpusWordIndex wordIndex,
         HashSet<string> vocabulary,
+        int sampleCount,
         string evaluationMode,
         string trainingCorpus,
         string evaluationCorpus,
@@ -405,7 +417,7 @@ internal static class PredictionEvaluationRunner
         IReadOnlyList<string> initialContext,
         IReadOnlyList<string> evaluationTokens)
     {
-        int[] samplePositions = GetSamplePositions(evaluationTokens.Count);
+        int[] samplePositions = GetSamplePositions(evaluationTokens.Count, sampleCount);
         if (samplePositions.Length == 0)
         {
             return;
@@ -516,9 +528,9 @@ internal static class PredictionEvaluationRunner
         }
     }
 
-    private static int[] GetSamplePositions(int tokenCount)
+    private static int[] GetSamplePositions(int tokenCount, int sampleCount)
     {
-        int count = Math.Min(SampleCount, tokenCount);
+        int count = Math.Min(sampleCount, tokenCount);
         if (count == 1)
         {
             return [0];
@@ -551,6 +563,23 @@ internal static class PredictionEvaluationRunner
 
     private static double Ratio(int numerator, int denominator) =>
         denominator == 0 ? 0.0 : numerator / (double)denominator;
+
+    private static int GetSampleCount(string[] args)
+    {
+        int index = Array.IndexOf(args, "--sample-count");
+        if (index < 0)
+        {
+            return DefaultSampleCount;
+        }
+        if (index + 1 >= args.Length ||
+            !int.TryParse(args[index + 1], NumberStyles.None, CultureInfo.InvariantCulture, out int sampleCount) ||
+            sampleCount < 1)
+        {
+            throw new ArgumentException("--sample-count requires a positive integer.");
+        }
+
+        return sampleCount;
+    }
 
     private static string GetOutputPath(string[] args)
     {
