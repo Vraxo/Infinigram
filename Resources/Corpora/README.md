@@ -30,3 +30,16 @@ fixture remains available as a stable baseline when no real corpus is present.
 Large corpora can make the repository and CI checkout significantly larger.
 Prefer a small, representative set and keep held-out evaluation text separate
 from training corpora.
+
+
+## Pride and Prejudice
+
+- **Author:** Jane Austen
+- **Original publication:** 1813
+- **Source edition:** Project Gutenberg, eBook #1342
+- **Project Gutenberg record:** https://www.gutenberg.org/ebooks/1342
+- **Plain-text source:** https://www.gutenberg.org/files/1342/1342-0.txt
+- **Preparation:** Gutenberg front matter, end matter, and chapter headings removed; novel text retained.
+- **Cleaned source copy:** https://github.com/erikthiem/pride-and-prejudice/blob/master/pride-prejudice-edited.txt. Its accompanying readme documents the Gutenberg source and cleanup.
+
+Project Gutenberg identifies eBook #1342 as public domain in the United States. The committed file contains the novel text without Gutenberg metadata or chapter headings.
