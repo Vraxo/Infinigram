@@ -6,6 +6,7 @@ namespace Infinigram.Benchmarks.Runner;
 internal static class GenerationExperimentRunner
 {
     private static readonly double[] Temperatures = [0.7, 1.0, 1.3];
+    private static readonly int[] SentenceContextWindows = [3, 6, 12];
     private static readonly double[] RepetitionPenalties = [1.0, 1.15, 1.5];
     private static readonly (string Name, int VocabularySize)[] Tokenizers =
     [
@@ -200,35 +201,39 @@ internal static class GenerationExperimentRunner
                         structuredEvaluation.MeanLogProbability.ToString("0.000000", CultureInfo.InvariantCulture),
                         Csv(structuredText)));
 
-                    string sentenceFullText = wordIndex.GenerateSentence(
-                        promptText,
-                        maxWords: 24,
-                        temperature: temperature,
-                        topK: 40,
-                        rng: new Random(runSeed));
-                    string sentenceText = sentenceFullText.StartsWith(promptText, StringComparison.Ordinal)
-                        ? sentenceFullText[promptText.Length..]
-                        : string.Empty;
-                    int[] sentenceBytes = byteTokenizer.Encode(sentenceText).ToArray();
-                    GenerationEvaluation sentenceEvaluation = GenerationMetrics.Evaluate(
-                        byteModel, prompt, sentenceBytes, minimumSpan: MinimumSpan);
+                    foreach (int contextWindow in SentenceContextWindows)
+                    {
+                        string sentenceFullText = wordIndex.GenerateSentence(
+                            promptText,
+                            maxWords: 24,
+                            temperature: temperature,
+                            topK: 40,
+                            rng: new Random(runSeed),
+                            contextWindow: contextWindow);
+                        string sentenceText = sentenceFullText.StartsWith(promptText, StringComparison.Ordinal)
+                            ? sentenceFullText[promptText.Length..]
+                            : string.Empty;
+                        int[] sentenceBytes = byteTokenizer.Encode(sentenceText).ToArray();
+                        GenerationEvaluation sentenceEvaluation = GenerationMetrics.Evaluate(
+                            byteModel, prompt, sentenceBytes, minimumSpan: MinimumSpan);
 
-                    rows.Add(string.Join(",",
-                        Csv(Path.GetFileName(corpusPath)),
-                        "word-next-token-sentence",
-                        wordIndex.VocabularySize.ToString(CultureInfo.InvariantCulture),
-                        trainingBytes.Length.ToString(CultureInfo.InvariantCulture),
-                        promptIndex.ToString(CultureInfo.InvariantCulture),
-                        (promptStart - validationStart).ToString(CultureInfo.InvariantCulture),
-                        temperature.ToString("0.##", CultureInfo.InvariantCulture),
-                        penalty.ToString("0.##", CultureInfo.InvariantCulture),
-                        runSeed.ToString(CultureInfo.InvariantCulture),
-                        CorpusWordIndex.Tokenize(sentenceText).Count.ToString(CultureInfo.InvariantCulture),
-                        "byte",
-                        sentenceEvaluation.Overlap.MatchedRatio.ToString("0.0000", CultureInfo.InvariantCulture),
-                        sentenceEvaluation.Overlap.LongestMatch.ToString(CultureInfo.InvariantCulture),
-                        sentenceEvaluation.MeanLogProbability.ToString("0.000000", CultureInfo.InvariantCulture),
-                        Csv(sentenceText)));
+                        rows.Add(string.Join(",",
+                            Csv(Path.GetFileName(corpusPath)),
+                            $"word-next-token-sentence-context-{contextWindow}",
+                            wordIndex.VocabularySize.ToString(CultureInfo.InvariantCulture),
+                            trainingBytes.Length.ToString(CultureInfo.InvariantCulture),
+                            promptIndex.ToString(CultureInfo.InvariantCulture),
+                            (promptStart - validationStart).ToString(CultureInfo.InvariantCulture),
+                            temperature.ToString("0.##", CultureInfo.InvariantCulture),
+                            penalty.ToString("0.##", CultureInfo.InvariantCulture),
+                            runSeed.ToString(CultureInfo.InvariantCulture),
+                            CorpusWordIndex.Tokenize(sentenceText).Count.ToString(CultureInfo.InvariantCulture),
+                            "byte",
+                            sentenceEvaluation.Overlap.MatchedRatio.ToString("0.0000", CultureInfo.InvariantCulture),
+                            sentenceEvaluation.Overlap.LongestMatch.ToString(CultureInfo.InvariantCulture),
+                            sentenceEvaluation.MeanLogProbability.ToString("0.000000", CultureInfo.InvariantCulture),
+                            Csv(sentenceText)));
+                    }
                 }
             }
 

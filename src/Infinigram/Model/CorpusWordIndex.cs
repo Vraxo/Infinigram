@@ -190,7 +190,8 @@ public sealed class CorpusWordIndex
         int maxWords = 40,
         double temperature = 0.8,
         int? topK = 30,
-        Random? rng = null)
+        Random? rng = null,
+        int contextWindow = 12)
     {
         ArgumentNullException.ThrowIfNull(context);
         if (maxWords < 1)
@@ -201,12 +202,20 @@ public sealed class CorpusWordIndex
         {
             throw new ArgumentOutOfRangeException(nameof(temperature));
         }
+        if (contextWindow < 1 || contextWindow > MaximumContextWords)
+        {
+            throw new ArgumentOutOfRangeException(nameof(contextWindow));
+        }
 
         var contextWords = Tokenize(context);
         var current = PrepareContext(contextWords);
         if (contextWords.Count > 0 && current.Count == 0)
         {
             return context;
+        }
+        if (current.Count > contextWindow)
+        {
+            current.RemoveRange(0, current.Count - contextWindow);
         }
 
         var output = new StringBuilder(context);
@@ -235,7 +244,7 @@ public sealed class CorpusWordIndex
             int next = Sampling.SampleFromDistribution(probabilities, temperature, random);
             string token = _vocabulary[next];
             AppendToken(output, token);
-            AddContextToken(current, next);
+            AddContextToken(current, next, contextWindow);
 
             if (IsWordToken(token))
             {
@@ -350,6 +359,15 @@ public sealed class CorpusWordIndex
     {
         context.Add(token);
         if (context.Count > MaximumContextWords)
+        {
+            context.RemoveAt(0);
+        }
+    }
+
+    private static void AddContextToken(List<int> context, int token, int maximumLength)
+    {
+        context.Add(token);
+        if (context.Count > maximumLength)
         {
             context.RemoveAt(0);
         }
