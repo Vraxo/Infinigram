@@ -4,9 +4,12 @@ on:
   push:
     branches: [main]
     paths:
-      - "benchmarks/**"
-      - "Resources/Corpora/**"
-      - "src/**"
+      - "benchmarks/Infinigram.Benchmarks/TokenizerBenchmarks.cs"
+      - "benchmarks/Infinigram.Benchmarks/Core/TokenizerCorpusData.cs"
+      - "benchmarks/Infinigram.Benchmarks/Infinigram.Benchmarks.csproj"
+      - "src/Infinigram/Tokenization/**"
+      - "Resources/Corpora/**/*.txt"
+      - "Directory.Build.props"
       - ".github/workflows/tokenizer-benchmarks.yml"
   workflow_dispatch:
 
