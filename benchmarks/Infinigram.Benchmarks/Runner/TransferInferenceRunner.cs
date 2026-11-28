@@ -401,7 +401,10 @@ internal static partial class TransferInferenceRunner
         Estimate FictionToNonfiction,
         Estimate NonfictionToFiction,
         Estimate NonfictionToNonfiction,
-        Estimate SameGenreDifference);
+        Estimate SameGenreDifference,
+        Estimate NonfictionSourceAdvantageOnFictionTargets,
+        Estimate NonfictionSourceAdvantageOnNonfictionTargets,
+        Estimate GenreMatchInteraction);
 
     private enum CorpusGroup
     {
