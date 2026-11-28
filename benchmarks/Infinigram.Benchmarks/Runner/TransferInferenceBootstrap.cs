@@ -26,24 +26,29 @@ internal static partial class TransferInferenceRunner
         var fnSamples = new double[bootstrapReplicates];
         var nfSamples = new double[bootstrapReplicates];
         var nnSamples = new double[bootstrapReplicates];
-        var differenceSamples = new double[bootstrapReplicates];
+        var diagonalSamples = new double[bootstrapReplicates];
+        var fictionTargetAdvantageSamples = new double[bootstrapReplicates];
+        var nonfictionTargetAdvantageSamples = new double[bootstrapReplicates];
+        var interactionSamples = new double[bootstrapReplicates];
 
         for (int replicate = 0; replicate < bootstrapReplicates; replicate++)
         {
-            ffSamples[replicate] = BootstrapCell(
-                results, corpora, CorpusGroup.Fiction, CorpusGroup.Fiction,
-                blockCount, random);
-            fnSamples[replicate] = BootstrapCell(
-                results, corpora, CorpusGroup.Fiction, CorpusGroup.Nonfiction,
-                blockCount, random);
-            nfSamples[replicate] = BootstrapCell(
-                results, corpora, CorpusGroup.Nonfiction, CorpusGroup.Fiction,
-                blockCount, random);
-            nnSamples[replicate] = BootstrapCell(
-                results, corpora, CorpusGroup.Nonfiction, CorpusGroup.Nonfiction,
-                blockCount, random);
-            differenceSamples[replicate] =
-                nnSamples[replicate] - ffSamples[replicate];
+            BootstrapReplicate sample = ResampleAllCells(
+                results, corpora, blockCount, random);
+
+            ffSamples[replicate] = sample.FictionToFiction;
+            fnSamples[replicate] = sample.FictionToNonfiction;
+            nfSamples[replicate] = sample.NonfictionToFiction;
+            nnSamples[replicate] = sample.NonfictionToNonfiction;
+            diagonalSamples[replicate] =
+                sample.NonfictionToNonfiction - sample.FictionToFiction;
+            fictionTargetAdvantageSamples[replicate] =
+                sample.NonfictionToFiction - sample.FictionToFiction;
+            nonfictionTargetAdvantageSamples[replicate] =
+                sample.NonfictionToNonfiction - sample.FictionToNonfiction;
+            interactionSamples[replicate] =
+                nonfictionTargetAdvantageSamples[replicate] -
+                fictionTargetAdvantageSamples[replicate];
         }
 
         return new InferenceSummary(
@@ -53,7 +58,17 @@ internal static partial class TransferInferenceRunner
             new Estimate(nonfictionToNonfiction, GetInterval(nnSamples)),
             new Estimate(
                 nonfictionToNonfiction - fictionToFiction,
-                GetInterval(differenceSamples)));
+                GetInterval(diagonalSamples)),
+            new Estimate(
+                nonfictionToFiction - fictionToFiction,
+                GetInterval(fictionTargetAdvantageSamples)),
+            new Estimate(
+                nonfictionToNonfiction - fictionToNonfiction,
+                GetInterval(nonfictionTargetAdvantageSamples)),
+            new Estimate(
+                (nonfictionToNonfiction - fictionToNonfiction) -
+                (nonfictionToFiction - fictionToFiction),
+                GetInterval(interactionSamples)));
     }
 
     private static double GetPointEstimate(
@@ -77,48 +92,93 @@ internal static partial class TransferInferenceRunner
         return scores.Average();
     }
 
-    private static double BootstrapCell(
+    private static BootstrapReplicate ResampleAllCells(
         PairResult[,] results,
         IReadOnlyList<CorpusData> corpora,
-        CorpusGroup sourceGroup,
-        CorpusGroup targetGroup,
         int blockCount,
         StableRandom random)
     {
-        CorpusData[] sourceBooks = corpora
-            .Where(corpus => corpus.Group == sourceGroup)
+        CorpusData[] fictionBooks = corpora
+            .Where(corpus => corpus.Group == CorpusGroup.Fiction)
             .ToArray();
-        CorpusData[] targetBooks = corpora
-            .Where(corpus => corpus.Group == targetGroup)
+        CorpusData[] nonfictionBooks = corpora
+            .Where(corpus => corpus.Group == CorpusGroup.Nonfiction)
             .ToArray();
 
-        var selectedTargets = new CorpusData[targetBooks.Length];
-        for (int index = 0; index < selectedTargets.Length; index++)
+        CorpusData[] selectedFictionTargets = ResampleBooks(fictionBooks, random);
+        CorpusData[] selectedNonfictionTargets = ResampleBooks(nonfictionBooks, random);
+
+        int[] fictionSourceWeights = ResampleSourceWeights(
+            fictionBooks, selectedFictionTargets, random);
+        int[] nonfictionSourceWeights = ResampleSourceWeights(
+            nonfictionBooks, selectedNonfictionTargets, random);
+
+        (double FictionSources, double NonfictionSources) fictionTargets =
+            EvaluateResampledTargets(
+                results,
+                selectedFictionTargets,
+                fictionBooks,
+                fictionSourceWeights,
+                nonfictionBooks,
+                nonfictionSourceWeights,
+                blockCount,
+                random);
+
+        (double FictionSources, double NonfictionSources) nonfictionTargets =
+            EvaluateResampledTargets(
+                results,
+                selectedNonfictionTargets,
+                fictionBooks,
+                fictionSourceWeights,
+                nonfictionBooks,
+                nonfictionSourceWeights,
+                blockCount,
+                random);
+
+        return new BootstrapReplicate(
+            fictionTargets.FictionSources,
+            nonfictionTargets.FictionSources,
+            fictionTargets.NonfictionSources,
+            nonfictionTargets.NonfictionSources);
+    }
+
+    private static CorpusData[] ResampleBooks(
+        IReadOnlyList<CorpusData> books,
+        StableRandom random)
+    {
+        var selected = new CorpusData[books.Count];
+        for (int index = 0; index < selected.Length; index++)
         {
-            selectedTargets[index] = targetBooks[random.NextInt(targetBooks.Length)];
+            selected[index] = books[random.NextInt(books.Count)];
         }
 
-        // Draw source-book weights once per replicate so the same source-book
-        // resample is shared across every target book in this comparison.
-        var sourceWeights = new int[sourceBooks.Length];
+        return selected;
+    }
+
+    private static int[] ResampleSourceWeights(
+        IReadOnlyList<CorpusData> sourceBooks,
+        IReadOnlyList<CorpusData> sameGenreTargets,
+        StableRandom random)
+    {
+        var weights = new int[sourceBooks.Count];
         bool hasEligibleSource;
         do
         {
-            Array.Clear(sourceWeights);
-            for (int draw = 0; draw < sourceBooks.Length; draw++)
+            Array.Clear(weights);
+            for (int draw = 0; draw < sourceBooks.Count; draw++)
             {
-                sourceWeights[random.NextInt(sourceBooks.Length)]++;
+                weights[random.NextInt(sourceBooks.Count)]++;
             }
 
             hasEligibleSource = true;
-            foreach (CorpusData target in selectedTargets)
+            foreach (CorpusData target in sameGenreTargets)
             {
                 int eligibleWeight = 0;
-                for (int sourceIndex = 0; sourceIndex < sourceBooks.Length; sourceIndex++)
+                for (int sourceIndex = 0; sourceIndex < sourceBooks.Count; sourceIndex++)
                 {
                     if (sourceBooks[sourceIndex].Index != target.Index)
                     {
-                        eligibleWeight += sourceWeights[sourceIndex];
+                        eligibleWeight += weights[sourceIndex];
                     }
                 }
 
@@ -131,7 +191,23 @@ internal static partial class TransferInferenceRunner
         }
         while (!hasEligibleSource);
 
-        double targetTotal = 0.0;
+        return weights;
+    }
+
+    private static (double FictionSources, double NonfictionSources)
+        EvaluateResampledTargets(
+            PairResult[,] results,
+            IReadOnlyList<CorpusData> selectedTargets,
+            IReadOnlyList<CorpusData> fictionSources,
+            IReadOnlyList<int> fictionSourceWeights,
+            IReadOnlyList<CorpusData> nonfictionSources,
+            IReadOnlyList<int> nonfictionSourceWeights,
+            int blockCount,
+            StableRandom random)
+    {
+        double fictionTotal = 0.0;
+        double nonfictionTotal = 0.0;
+
         foreach (CorpusData target in selectedTargets)
         {
             var selectedBlocks = new int[blockCount];
@@ -140,26 +216,42 @@ internal static partial class TransferInferenceRunner
                 selectedBlocks[block] = random.NextInt(blockCount);
             }
 
-            double sourceTotal = 0.0;
-            int eligibleWeightTotal = 0;
-            for (int sourceIndex = 0; sourceIndex < sourceBooks.Length; sourceIndex++)
-            {
-                CorpusData source = sourceBooks[sourceIndex];
-                int weight = sourceWeights[sourceIndex];
-                if (weight == 0 || source.Index == target.Index)
-                {
-                    continue;
-                }
-
-                sourceTotal += weight * GetBlockAccuracy(
-                    results[source.Index, target.Index], selectedBlocks);
-                eligibleWeightTotal += weight;
-            }
-
-            targetTotal += sourceTotal / eligibleWeightTotal;
+            fictionTotal += GetSourceMean(
+                results, target, fictionSources, fictionSourceWeights, selectedBlocks);
+            nonfictionTotal += GetSourceMean(
+                results, target, nonfictionSources, nonfictionSourceWeights, selectedBlocks);
         }
 
-        return targetTotal / selectedTargets.Length;
+        return (
+            fictionTotal / selectedTargets.Count,
+            nonfictionTotal / selectedTargets.Count);
+    }
+
+    private static double GetSourceMean(
+        PairResult[,] results,
+        CorpusData target,
+        IReadOnlyList<CorpusData> sourceBooks,
+        IReadOnlyList<int> sourceWeights,
+        IReadOnlyList<int> selectedBlocks)
+    {
+        double total = 0.0;
+        int weightTotal = 0;
+
+        for (int sourceIndex = 0; sourceIndex < sourceBooks.Count; sourceIndex++)
+        {
+            CorpusData source = sourceBooks[sourceIndex];
+            int weight = sourceWeights[sourceIndex];
+            if (weight == 0 || source.Index == target.Index)
+            {
+                continue;
+            }
+
+            total += weight * GetBlockAccuracy(
+                results[source.Index, target.Index], selectedBlocks);
+            weightTotal += weight;
+        }
+
+        return weightTotal == 0 ? 0.0 : total / weightTotal;
     }
 
     private static double GetBlockAccuracy(
@@ -201,4 +293,9 @@ internal static partial class TransferInferenceRunner
             (sortedValues[upper] - sortedValues[lower]) * fraction;
     }
 
+    private sealed record BootstrapReplicate(
+        double FictionToFiction,
+        double FictionToNonfiction,
+        double NonfictionToFiction,
+        double NonfictionToNonfiction);
 }
