@@ -58,7 +58,7 @@ internal static partial class TransferInferenceRunner
             "Intervals are 95% percentile hierarchical bootstrap intervals. Each replicate resamples target books with replacement within target genre and draws source-book bootstrap weights once within source genre, reusing those weights across all selected targets. Self-transfer is excluded when source and target genres match. Contiguous target-text blocks are resampled separately for each selected target, with the same block draw paired across its source models.");
         report.AppendLine();
         report.AppendLine(
-            "The primary contrast is nonfiction→nonfiction minus fiction→fiction. A positive interval entirely above zero is consistent with a positive difference for this selected corpus set under this resampling design. It does not establish a general genre law: there are only three fiction and five nonfiction books, authors and historical periods are not independently balanced, and repeated blocks within a book are not independent books.");
+            "The primary genre-match contrast is the difference-in-differences: (nonfiction→nonfiction − fiction→nonfiction) − (nonfiction→fiction − fiction→fiction). It measures whether nonfiction sources gain more on nonfiction targets than on fiction targets, relative to fiction sources. A positive interval entirely above zero is evidence of a source-genre × target-genre interaction within this selected corpus set. It does not establish a general genre law: there are only three fiction and five nonfiction books, authors and historical periods are not independently balanced, and repeated blocks within a book are not independent books.");
         report.AppendLine();
         report.AppendLine(
             "The point estimates are averages over directed source/target book pairs. The bootstrap resamples book identities as clusters and target-text blocks within each selected book. The globally balanced mode gives every source model the same training-token budget; the target-size-matched mode caps each source to the target's 80% training-token budget.");
@@ -79,8 +79,17 @@ internal static partial class TransferInferenceRunner
         AppendEstimate(report, "Nonfiction → nonfiction", summary.NonfictionToNonfiction);
         report.AppendLine();
         report.AppendLine(
-            $"**Nonfiction→nonfiction minus fiction→fiction:** {FormatPercent(summary.SameGenreDifference.Value)} " +
+            $"**Diagonal contrast (nonfiction→nonfiction minus fiction→fiction):** {FormatPercent(summary.SameGenreDifference.Value)} " +
             $"(95% interval {FormatInterval(summary.SameGenreDifference.Interval)})");
+        report.AppendLine(
+            $"**Nonfiction-source advantage on fiction targets (nonfiction→fiction minus fiction→fiction):** {FormatPercent(summary.NonfictionSourceAdvantageOnFictionTargets.Value)} " +
+            $"(95% interval {FormatInterval(summary.NonfictionSourceAdvantageOnFictionTargets.Interval)})");
+        report.AppendLine(
+            $"**Nonfiction-source advantage on nonfiction targets (nonfiction→nonfiction minus fiction→nonfiction):** {FormatPercent(summary.NonfictionSourceAdvantageOnNonfictionTargets.Value)} " +
+            $"(95% interval {FormatInterval(summary.NonfictionSourceAdvantageOnNonfictionTargets.Interval)})");
+        report.AppendLine(
+            $"**Genre-match interaction (difference-in-differences):** {FormatPercent(summary.GenreMatchInteraction.Value)} " +
+            $"(95% interval {FormatInterval(summary.GenreMatchInteraction.Interval)})");
         report.AppendLine();
     }
 
@@ -99,7 +108,9 @@ internal static partial class TransferInferenceRunner
             $"{label}: nonfiction→nonfiction {FormatPercent(summary.NonfictionToNonfiction.Value)}, " +
             $"95% CI {FormatInterval(summary.NonfictionToNonfiction.Interval)}; " +
             $"difference vs fiction→fiction {FormatPercent(summary.SameGenreDifference.Value)}, " +
-            $"95% CI {FormatInterval(summary.SameGenreDifference.Interval)}");
+            $"95% CI {FormatInterval(summary.SameGenreDifference.Interval)}; " +
+            $"genre-match interaction {FormatPercent(summary.GenreMatchInteraction.Value)}, " +
+            $"95% CI {FormatInterval(summary.GenreMatchInteraction.Interval)}");
     }
 
     private static string FormatPercent(double value) =>
