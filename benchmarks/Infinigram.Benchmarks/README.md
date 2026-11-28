@@ -66,3 +66,10 @@ For every evaluation book, lexical target positions are sampled without replacem
 The report includes 95% percentile hierarchical bootstrap intervals. Each replicate resamples target books within target genre, source books within source genre (excluding self-transfer for same-genre comparisons), and contiguous target-text blocks. The block draws are shared across source models for each sampled target. The raw CSV stores per-pair block totals so the summary can be recomputed.
 
 These intervals describe variability across this selected set of books and their text blocks. The corpus set has only three fiction and five nonfiction works, so the intervals do not remove confounding by author, historical period, topic, or text type and should not be treated as proof of a universal genre effect. This benchmark evaluates lexical prediction only; it does not alter production model behavior.
+
+
+The inferential report also computes the **genre-match interaction** (difference-in-differences):
+
+`(nonfiction→nonfiction − fiction→nonfiction) − (nonfiction→fiction − fiction→fiction)`
+
+This holds target genre constant when measuring the relative advantage of nonfiction sources, then compares that source advantage across target genres. The bootstrap draws target-book samples, shared source-book weights, and paired target-block samples once per replicate so the four cells and interaction retain their dependence.
