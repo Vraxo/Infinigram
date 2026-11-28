@@ -73,3 +73,6 @@ The inferential report also computes the **genre-match interaction** (difference
 `(nonfiction→nonfiction − fiction→nonfiction) − (nonfiction→fiction − fiction→fiction)`
 
 This holds target genre constant when measuring the relative advantage of nonfiction sources, then compares that source advantage across target genres. The bootstrap draws target-book samples, shared source-book weights, and paired target-block samples once per replicate so the four cells and interaction retain their dependence.
+
+
+The automated workflow also runs a **context-window-zero unigram control** with the same sample count and seed as the context-window-three inference run. Because sampling positions are seed-derived independently of context length, this control uses the same held-out lexical targets. Comparing the genre-match interaction between the two runs helps distinguish a source/target effect explained by unigram frequency profiles from one that depends on local context.
